@@ -40,4 +40,7 @@ public class User extends BaseEntity {
 
     @Builder.Default
     private Boolean active = true;
+
+    @Builder.Default
+    private Boolean enabled = true;
 }

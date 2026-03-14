@@ -17,4 +17,6 @@ public class RegisterRequest {
 
     @NotBlank
     private String lastName;
+
+    private String houseNumber;
 }

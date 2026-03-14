@@ -45,6 +45,7 @@ public class AuthController {
                 .fullName(fullName)
                 .phoneNumber(request.getPhoneNumber())
                 .password(passwordEncoder.encode(request.getPassword()))
+                .houseNumber(request.getHouseNumber())
                 .roles(roles)
                 .active(true)
                 .build();
@@ -73,7 +74,7 @@ public class AuthController {
                 .reduce((r1, r2) -> r1 + "," + r2)
                 .orElse("");
 
-        String token = jwtUtil.generateToken(user.getPhoneNumber(), roleNames);
+        String token = jwtUtil.generateToken(user.getPhoneNumber(), roleNames, user.getId());
 
         return new AuthResponse(token);
     }

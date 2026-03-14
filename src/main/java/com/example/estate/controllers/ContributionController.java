@@ -27,7 +27,7 @@ public class ContributionController {
             @PathVariable Long id,
             @RequestParam BigDecimal amount,
             @RequestParam PaymentMethod method,
-            @RequestParam String reference
+            @RequestParam(required = false) String reference
     ) {
         return paymentService.makePayment(id, amount, method, reference);
     }

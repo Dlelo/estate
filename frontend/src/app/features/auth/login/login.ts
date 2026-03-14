@@ -1,7 +1,7 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 
@@ -48,6 +48,13 @@ import { ToastService } from '../../../core/services/toast.service';
             }
           </div>
 
+          @if (sessionExpired()) {
+            <div class="alert alert-warning py-2 mb-3 d-flex align-items-center gap-2">
+              <span>⏰</span>
+              <span>Your session has expired. Please sign in again.</span>
+            </div>
+          }
+
           @if (error()) {
             <div class="alert alert-danger py-2 mb-3">{{ error() }}</div>
           }
@@ -65,22 +72,28 @@ import { ToastService } from '../../../core/services/toast.service';
     </div>
   `
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
   form: FormGroup;
   loading = signal(false);
   error = signal('');
   showPass = signal(false);
+  sessionExpired = signal(false);
 
   constructor(
     private fb: FormBuilder,
     private auth: AuthService,
     private router: Router,
+    private route: ActivatedRoute,
     private toast: ToastService
   ) {
     this.form = this.fb.group({
       phoneNumber: ['', [Validators.required, Validators.minLength(10)]],
       password: ['', Validators.required]
     });
+  }
+
+  ngOnInit() {
+    this.sessionExpired.set(this.route.snapshot.queryParamMap.get('reason') === 'expired');
   }
 
   togglePass() { this.showPass.set(!this.showPass()); }

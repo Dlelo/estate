@@ -56,7 +56,7 @@ public class UserController {
 
     // ✅ Admin update roles
     @PutMapping("/{id}/roles")
-    //@PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public UserResponseDTO updateUserRoles(
             @PathVariable Long id,
             @Valid @RequestBody UpdateUserRolesRequest request

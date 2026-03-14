@@ -1,18 +1,27 @@
 package com.example.estate.service;
 
 import com.example.estate.dto.ContributionTypeRequest;
+import com.example.estate.enums.ContributionFrequency;
 import com.example.estate.model.ContributionType;
 import com.example.estate.repository.ContributionTypeRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import java.time.YearMonth;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ContributionTypeService {
 
     private final ContributionTypeRepository repository;
+
+    // @Lazy breaks the circular dependency: ContributionService → ContributionTypeService
+    @Lazy
+    private final ContributionService contributionService;
 
     public List<ContributionType> getAll() {
         return repository.findAll();
@@ -32,7 +41,19 @@ public class ContributionTypeService {
                 .frequency(req.getFrequency())
                 .active(true)
                 .build();
-        return repository.save(type);
+        type = repository.save(type);
+
+        // Immediately generate contribution records for all active members
+        // so they see the new obligation right away without waiting for the scheduler.
+        String period = buildCurrentPeriod(req.getFrequency());
+        try {
+            contributionService.generateContributionsForPeriod(period);
+            log.info("Auto-generated contributions for new type '{}' period={}", type.getName(), period);
+        } catch (Exception e) {
+            log.warn("Could not auto-generate contributions for new type '{}': {}", type.getName(), e.getMessage());
+        }
+
+        return type;
     }
 
     public ContributionType update(Long id, ContributionTypeRequest req) {
@@ -63,5 +84,19 @@ public class ContributionTypeService {
         type.setDeleted(true);
         type.setActive(false);
         repository.save(type);
+    }
+
+    /**
+     * Returns the period string to use when auto-generating contributions:
+     * - MONTHLY  → "YYYY-MM"  (current month)
+     * - ANNUAL   → "YYYY"     (current year)
+     * - ONE_TIME → "YYYY-MM"  (current month)
+     */
+    private String buildCurrentPeriod(ContributionFrequency frequency) {
+        YearMonth now = YearMonth.now();
+        if (frequency == ContributionFrequency.ANNUAL) {
+            return String.valueOf(now.getYear());
+        }
+        return now.toString(); // e.g. "2026-03"
     }
 }

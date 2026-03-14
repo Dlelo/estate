@@ -4,8 +4,15 @@ import { AuthService } from '../services/auth.service';
 
 export const authGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
-  const router = inject(Router);
+
+  // Token present but expired → force logout before proceeding
+  if (auth.isTokenExpired()) {
+    auth.logout(true);
+    return false;
+  }
+
   if (auth.isLoggedIn()) return true;
-  router.navigate(['/login']);
+
+  inject(Router).navigate(['/login']);
   return false;
 };

@@ -66,10 +66,12 @@ public class ContributionService {
      * Generates both MONTHLY types every call, and ANNUAL types only for January periods.
      */
     public void generateContributionsForPeriod(String period) {
-        YearMonth ym = YearMonth.parse(period);
         List<User> users = userRepository.findAll().stream()
                 .filter(u -> Boolean.TRUE.equals(u.getActive()))
                 .toList();
+
+        // Detect if period is a year-only string ("2026") or a month string ("2026-03")
+        boolean isYearOnly = period.matches("\\d{4}");
 
         List<ContributionType> monthlyTypes =
                 contributionTypeRepository.findByFrequency(ContributionFrequency.MONTHLY)
@@ -79,26 +81,37 @@ public class ContributionService {
                 contributionTypeRepository.findByFrequency(ContributionFrequency.ANNUAL)
                         .stream().filter(t -> Boolean.TRUE.equals(t.getActive())).toList();
 
+        List<ContributionType> oneTimeTypes =
+                contributionTypeRepository.findByFrequency(ContributionFrequency.ONE_TIME)
+                        .stream().filter(t -> Boolean.TRUE.equals(t.getActive())).toList();
+
         int count = 0;
         for (User user : users) {
-            for (ContributionType type : monthlyTypes) {
-                if (!contributionRepository.existsByUserAndContributionTypeAndPeriod(user, type, period)) {
-                    save(user, type, period);
-                    count++;
+            if (!isYearOnly) {
+                // Monthly period: generate MONTHLY and ONE_TIME types
+                for (ContributionType type : monthlyTypes) {
+                    if (!contributionRepository.existsByUserAndContributionTypeAndPeriod(user, type, period)) {
+                        save(user, type, period);
+                        count++;
+                    }
                 }
-            }
-            // Annual types only in January
-            if (ym.getMonthValue() == 1) {
+                for (ContributionType type : oneTimeTypes) {
+                    if (!contributionRepository.existsByUserAndContributionTypeAndPeriod(user, type, period)) {
+                        save(user, type, period);
+                        count++;
+                    }
+                }
+            } else {
+                // Year-only period: generate ANNUAL types
                 for (ContributionType type : annualTypes) {
-                    String annualPeriod = String.valueOf(ym.getYear());
-                    if (!contributionRepository.existsByUserAndContributionTypeAndPeriod(user, type, annualPeriod)) {
-                        save(user, type, annualPeriod);
+                    if (!contributionRepository.existsByUserAndContributionTypeAndPeriod(user, type, period)) {
+                        save(user, type, period);
                         count++;
                     }
                 }
             }
         }
-        log.info("Generated {} contributions for period {}", count, period);
+        log.info("Generated {} contributions for period '{}'", count, period);
     }
 
     private void save(User user, ContributionType type, String period) {

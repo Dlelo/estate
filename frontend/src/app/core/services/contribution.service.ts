@@ -13,11 +13,22 @@ export class ContributionService {
     return this.http.get<Contribution[]>(`${this.base}/user/${userId}`);
   }
 
+  getPending(userId: number) {
+    return this.http.get<Contribution[]>(`${this.base}/user/${userId}/pending`);
+  }
+
   pay(contributionId: number, amount: number, method: string, reference?: string) {
     let params = new HttpParams()
       .set('amount', amount)
       .set('method', method);
     if (reference) params = params.set('reference', reference);
     return this.http.post<Payment>(`${this.base}/${contributionId}/pay`, null, { params });
+  }
+
+  generateForPeriod(period: string) {
+    return this.http.post<string>(
+      `${this.base}/admin/generate`, null,
+      { params: new HttpParams().set('period', period), responseType: 'text' as any }
+    );
   }
 }

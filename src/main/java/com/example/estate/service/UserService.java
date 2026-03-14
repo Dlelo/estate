@@ -74,6 +74,13 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    // ✅ Archive or activate
+    public User setActive(Long userId, boolean active) {
+        User user = getUserOrThrow(userId);
+        user.setActive(active);
+        return userRepository.save(user);
+    }
+
     // ✅ Soft delete
     public void deleteUser(Long userId) {
         User user = getUserOrThrow(userId);

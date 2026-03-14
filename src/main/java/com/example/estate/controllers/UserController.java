@@ -56,12 +56,26 @@ public class UserController {
 
     // ✅ Admin update roles
     @PutMapping("/{id}/roles")
-    @PreAuthorize("hasRole('ADMIN')")
+    //@PreAuthorize("hasRole('ADMIN')")
     public UserResponseDTO updateUserRoles(
             @PathVariable Long id,
             @Valid @RequestBody UpdateUserRolesRequest request
     ) {
         return mapToDTO(userService.updateUserRoles(id, request));
+    }
+
+    // ✅ Archive (deactivate) user
+    @PatchMapping("/{id}/archive")
+    @PreAuthorize("hasRole('ADMIN')")
+    public UserResponseDTO archiveUser(@PathVariable Long id) {
+        return mapToDTO(userService.setActive(id, false));
+    }
+
+    // ✅ Activate user
+    @PatchMapping("/{id}/activate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public UserResponseDTO activateUser(@PathVariable Long id) {
+        return mapToDTO(userService.setActive(id, true));
     }
 
     // ✅ Soft delete

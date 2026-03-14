@@ -33,6 +33,9 @@ export class UserService {
     return this.http.put<void>(`${this.base}/${id}/roles`, req);
   }
 
+  archive(id: number)  { return this.http.patch<void>(`${this.base}/${id}/archive`, null); }
+  activate(id: number) { return this.http.patch<void>(`${this.base}/${id}/activate`, null); }
+
   deleteUser(id: number) {
     return this.http.delete<void>(`${this.base}/${id}`);
   }

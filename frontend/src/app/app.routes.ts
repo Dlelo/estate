@@ -24,6 +24,14 @@ export const routes: Routes = [
         loadComponent: () => import('./features/contributions/contributions').then(m => m.ContributionsComponent)
       },
       {
+        path: 'pending',
+        loadComponent: () => import('./features/pending/pending').then(m => m.PendingComponent)
+      },
+      {
+        path: 'notifications',
+        loadComponent: () => import('./features/notifications/notifications').then(m => m.NotificationsComponent)
+      },
+      {
         path: 'profile',
         loadComponent: () => import('./features/profile/profile').then(m => m.ProfileComponent)
       },
@@ -35,6 +43,11 @@ export const routes: Routes = [
       {
         path: 'admin/reports',
         loadComponent: () => import('./features/admin/reports/admin-reports').then(m => m.AdminReportsComponent),
+        canActivate: [adminGuard]
+      },
+      {
+        path: 'admin/contribution-types',
+        loadComponent: () => import('./features/admin/contribution-types/admin-contribution-types').then(m => m.AdminContributionTypesComponent),
         canActivate: [adminGuard]
       }
     ]

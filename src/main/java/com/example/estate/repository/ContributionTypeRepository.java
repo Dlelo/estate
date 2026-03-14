@@ -14,4 +14,6 @@ public interface ContributionTypeRepository extends JpaRepository<ContributionTy
 
     Optional<ContributionType> findByName(String name);
 
+    List<ContributionType> findByActiveTrue();
+
 }

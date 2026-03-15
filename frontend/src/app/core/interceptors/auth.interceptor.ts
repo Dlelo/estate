@@ -13,8 +13,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(req).pipe(
     catchError((err: HttpErrorResponse) => {
-      if (err.status === 401) {
-        // Token rejected by server (expired or invalid) → force logout
+      if (err.status === 401 && auth.isTokenExpired()) {
+        // Token has expired → force logout
         auth.logout(true);
       }
       return throwError(() => err);

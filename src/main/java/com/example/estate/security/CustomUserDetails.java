@@ -33,7 +33,7 @@ public class CustomUserDetails implements UserDetailsService {
                 .username(user.getPhoneNumber())
                 .password(user.getPassword())
                 .authorities(authorities)
-                .disabled(!user.getActive())
+                .disabled(!Boolean.TRUE.equals(user.getActive()))
                 .build();
     }
 }

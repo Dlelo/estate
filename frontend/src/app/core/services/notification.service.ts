@@ -53,4 +53,12 @@ export class NotificationService {
   send(req: SendNotificationRequest) {
     return this.http.post<{ sent: number; message: string }>(`${this.base}/send`, req);
   }
+
+  remindUnpaid(period: string) {
+    return this.http.post<{ reminded: number; message: string }>(
+      `${this.base}/remind-unpaid`,
+      null,
+      { params: { period } }
+    );
+  }
 }

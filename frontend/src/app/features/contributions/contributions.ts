@@ -179,22 +179,9 @@ import autoTable from 'jspdf-autotable';
               </div>
 
               <form [formGroup]="payForm">
-                <div class="mb-3">
-                  <label class="form-label">Payment Method</label>
-                  <div class="d-flex gap-2">
-                    <button type="button" class="btn flex-1"
-                      [class.btn-success]="payForm.value.method==='MPESA'"
-                      [class.btn-outline-success]="payForm.value.method!=='MPESA'"
-                      (click)="payForm.patchValue({method:'MPESA'})">
-                      📱 M-Pesa
-                    </button>
-                    <button type="button" class="btn flex-1"
-                      [class.btn-primary]="payForm.value.method==='BANK'"
-                      [class.btn-outline-primary]="payForm.value.method!=='BANK'"
-                      (click)="payForm.patchValue({method:'BANK'})">
-                      🏦 Bank Transfer
-                    </button>
-                  </div>
+                <div class="mpesa-logo-bar mb-3">
+                  <div class="mpesa-badge">M-PESA</div>
+                  <span style="font-size:.8rem;color:#7f8c8d">Safaricom Kenya</span>
                 </div>
 
                 <div class="mb-3">
@@ -205,11 +192,13 @@ import autoTable from 'jspdf-autotable';
                 </div>
 
                 <div class="mb-3">
-                  <label class="form-label">
-                    {{ payForm.value.method === 'MPESA' ? 'M-Pesa Transaction Code' : 'Bank Reference' }}
-                  </label>
+                  <label class="form-label">M-Pesa Transaction Code</label>
                   <input type="text" class="form-control" formControlName="reference"
-                    [placeholder]="payForm.value.method === 'MPESA' ? 'e.g. QGH3X1ABCD' : 'Bank ref number'">
+                    placeholder="e.g. QGH3X1ABCD">
+                </div>
+
+                <div class="alert alert-success py-2" style="font-size:.82rem">
+                  💡 Enter the M-Pesa confirmation code you received after payment.
                 </div>
               </form>
             </div>
@@ -257,7 +246,7 @@ export class ContributionsComponent implements OnInit {
     private toast: ToastService
   ) {
     this.filterForm = this.fb.group({ search: '', period: '', status: '' });
-    this.payForm = this.fb.group({ method: 'MPESA', amount: [0], reference: '' });
+    this.payForm = this.fb.group({ amount: [0], reference: '' });
   }
 
   ngOnInit() {
@@ -283,11 +272,11 @@ export class ContributionsComponent implements OnInit {
   submitPayment() {
     const c = this.payingContrib();
     if (!c) return;
-    const { method, amount, reference } = this.payForm.value;
+    const { amount, reference } = this.payForm.value;
     if (!amount || amount <= 0) { this.toast.error('Enter a valid amount'); return; }
     if (amount > c.balance) { this.toast.error('Amount exceeds balance'); return; }
     this.payLoading.set(true);
-    this.contribSvc.pay(c.id, amount, method, reference).subscribe({
+    this.contribSvc.pay(c.id, amount, 'MPESA', reference).subscribe({
       next: () => {
         this.payLoading.set(false);
         this.payingContrib.set(null);

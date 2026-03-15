@@ -26,6 +26,14 @@ public class NotificationController {
         return Map.of("sent", count, "message", "Notification sent to " + count + " user(s)");
     }
 
+    /** Admin: send payment reminders to all members with unpaid contributions for the period */
+    @PostMapping("/remind-unpaid")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Map<String, Object> remindUnpaid(@RequestParam String period) {
+        int count = notificationService.sendPaymentReminders(period);
+        return Map.of("reminded", count, "message", "Payment reminders sent to " + count + " member(s)");
+    }
+
     /** User: get all notifications */
     @GetMapping("/user/{userId}")
     public List<Notification> getForUser(@PathVariable Long userId) {

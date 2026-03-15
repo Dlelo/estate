@@ -1,5 +1,6 @@
 package com.example.estate.controllers;
 
+import com.example.estate.dto.BulkPaymentRequest;
 import com.example.estate.model.*;
 import com.example.estate.enums.PaymentMethod;
 import com.example.estate.service.*;
@@ -38,6 +39,12 @@ public class ContributionController {
             @RequestParam(required = false) String reference
     ) {
         return paymentService.makePayment(id, amount, method, reference);
+    }
+
+    /** User: pay multiple contributions at once (quarterly / annual bulk) */
+    @PostMapping("/bulk-pay")
+    public List<Payment> bulkPay(@RequestBody BulkPaymentRequest req) {
+        return paymentService.bulkPay(req);
     }
 
     /** Admin: manually generate contributions for a given period */

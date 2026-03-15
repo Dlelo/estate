@@ -9,7 +9,8 @@ import { Contribution } from '../../core/models';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-type PayStep = 'method' | 'mpesa' | 'card' | 'bank' | 'confirm';
+type PayStep = 'mpesa' | 'confirm';
+type PayMode = 'single' | 'bulk';
 
 @Component({
   selector: 'app-pending',
@@ -61,9 +62,21 @@ type PayStep = 'method' | 'mpesa' | 'card' | 'bank' | 'confirm';
               [class.text-dark]="group.frequency==='ANNUAL'">
               {{ group.frequency }}
             </span>
-            <div class="ms-auto d-flex align-items-center gap-3">
+            <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
               <span class="text-danger fw-bold">{{ group.totalBalance | ksh }} due</span>
               <button class="btn btn-sm btn-primary" (click)="openPay(group.items[0])">Pay Now</button>
+              @if (group.frequency === 'MONTHLY' && group.items.length >= 3) {
+                <button class="btn btn-sm btn-outline-primary" title="Pay 3 months at once"
+                  (click)="openBulkPay(group.items.slice(0, 3))">
+                  Pay 3M ({{ bulkTotal(group.items, 3) | ksh }})
+                </button>
+              }
+              @if (group.frequency === 'MONTHLY' && group.items.length >= 6) {
+                <button class="btn btn-sm btn-outline-danger" title="Pay all outstanding months"
+                  (click)="openBulkPay(group.items)">
+                  Pay All {{ group.items.length }}M ({{ group.totalBalance | ksh }})
+                </button>
+              }
             </div>
           </div>
           <div class="panel-body p-0">
@@ -118,6 +131,103 @@ type PayStep = 'method' | 'mpesa' | 'card' | 'bank' | 'confirm';
       }
     }
 
+    <!-- ── BULK PAYMENT MODAL ────────────────────────────────────────── -->
+    @if (bulkItems().length) {
+      <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.55)">
+        <div class="modal-dialog modal-dialog-centered" style="max-width:500px">
+          <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#1a5276,#2e86c1);color:#fff;border-radius:16px 16px 0 0">
+              <div>
+                <h5 class="modal-title mb-0">💳 Bulk Payment</h5>
+                <small style="opacity:.8">{{ bulkItems().length }} months · {{ bulkItems()[0]?.contributionType?.name }}</small>
+              </div>
+              <button type="button" class="btn-close btn-close-white" (click)="closeBulkModal()"></button>
+            </div>
+
+            <!-- Summary bar -->
+            <div class="px-4 pt-3 pb-2" style="background:#f8f9fa;border-bottom:1px solid #eee">
+              <div class="row text-center g-0">
+                <div class="col-4">
+                  <div class="text-muted-sm">Months</div>
+                  <div class="fw-bold">{{ bulkItems().length }}</div>
+                </div>
+                <div class="col-4">
+                  <div class="text-muted-sm">Per Month</div>
+                  <div class="fw-bold">{{ (bulkItems()[0]?.amount ?? 0) | ksh }}</div>
+                </div>
+                <div class="col-4">
+                  <div class="text-muted-sm">Total Due</div>
+                  <div class="fw-bold text-danger">{{ bulkTotal(bulkItems(), bulkItems().length) | ksh }}</div>
+                </div>
+              </div>
+              <!-- Periods list -->
+              <div class="mt-2 d-flex gap-1 flex-wrap">
+                @for (c of bulkItems(); track c.id) {
+                  <span class="badge bg-light text-dark border font-mono" style="font-size:.72rem">{{ c.period }}</span>
+                }
+              </div>
+            </div>
+
+            <div class="modal-body px-4 py-3">
+
+              @if (bulkPayStep() === 'mpesa') {
+                <form [formGroup]="mpesaForm">
+                  <div class="mpesa-logo-bar mb-3">
+                    <div class="mpesa-badge">M-PESA</div>
+                    <span class="text-muted-sm">Safaricom Kenya</span>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">M-Pesa Phone Number</label>
+                    <div class="input-group">
+                      <span class="input-group-text">🇰🇪 +254</span>
+                      <input type="tel" class="form-control" formControlName="phone"
+                        placeholder="7XXXXXXXX"
+                        [class.is-invalid]="mpesaForm.get('phone')?.invalid && mpesaForm.get('phone')?.touched">
+                    </div>
+                    @if (mpesaForm.get('phone')?.invalid && mpesaForm.get('phone')?.touched) {
+                      <div class="text-danger mt-1" style="font-size:.8rem">Enter a valid Safaricom number</div>
+                    }
+                  </div>
+                  <div class="alert alert-success py-2" style="font-size:.82rem">
+                    💡 Total of <strong>{{ bulkTotal(bulkItems(), bulkItems().length) | ksh }}</strong> will be charged via M-Pesa STK Push.
+                  </div>
+                </form>
+              }
+
+              @if (bulkPayStep() === 'confirm') {
+                <div class="text-center py-2">
+                  <div style="font-size:3rem">📱</div>
+                  <h6 class="mt-2 fw-bold">Confirm Bulk M-Pesa Payment</h6>
+                  <div class="bg-light rounded p-3 text-start mt-3">
+                    <table class="table table-sm table-borderless mb-0">
+                      <tr><td class="text-muted-sm">Category</td><td class="fw-semibold">{{ bulkItems()[0]?.contributionType?.name }}</td></tr>
+                      <tr><td class="text-muted-sm">Months</td><td class="fw-semibold">{{ bulkItems().length }} months</td></tr>
+                      <tr><td class="text-muted-sm">Method</td><td class="fw-semibold">📱 M-Pesa</td></tr>
+                      <tr><td class="text-muted-sm">Total</td><td class="fw-bold text-primary" style="font-size:1.1rem">{{ bulkTotal(bulkItems(), bulkItems().length) | ksh }}</td></tr>
+                      <tr><td class="text-muted-sm">Phone</td><td class="font-mono">+254{{ mpesaForm.value.phone }}</td></tr>
+                    </table>
+                  </div>
+                </div>
+              }
+            </div>
+
+            <div class="modal-footer">
+              @if (bulkPayStep() === 'mpesa') {
+                <button class="btn btn-outline-secondary" (click)="closeBulkModal()">Cancel</button>
+                <button class="btn btn-primary" (click)="nextBulkStep()">Continue ›</button>
+              } @else {
+                <button class="btn btn-outline-secondary" (click)="bulkPayStep.set('mpesa')">‹ Back</button>
+                <button class="btn btn-primary" (click)="submitBulkPayment()" [disabled]="payLoading()">
+                  @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                  Confirm & Pay {{ bulkTotal(bulkItems(), bulkItems().length) | ksh }}
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
     <!-- ── PAYMENT MODAL ──────────────────────────────────────────────── -->
     @if (payingContrib()) {
       <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.55)">
@@ -153,38 +263,7 @@ type PayStep = 'method' | 'mpesa' | 'card' | 'bank' | 'confirm';
 
             <div class="modal-body px-4 py-3">
 
-              <!-- STEP 1: Choose method -->
-              @if (payStep() === 'method') {
-                <p class="text-muted-sm mb-3">Select your preferred payment method:</p>
-                <div class="d-flex flex-column gap-3">
-                  <button class="pay-method-btn mpesa" (click)="selectMethod('mpesa')">
-                    <span class="method-icon">📱</span>
-                    <div class="method-info">
-                      <div class="method-name">M-Pesa</div>
-                      <div class="method-desc">Pay via Safaricom mobile money</div>
-                    </div>
-                    <span class="method-arrow">›</span>
-                  </button>
-                  <button class="pay-method-btn card" (click)="selectMethod('card')">
-                    <span class="method-icon">💳</span>
-                    <div class="method-info">
-                      <div class="method-name">Credit / Debit Card</div>
-                      <div class="method-desc">Visa, Mastercard, American Express</div>
-                    </div>
-                    <span class="method-arrow">›</span>
-                  </button>
-                  <button class="pay-method-btn bank" (click)="selectMethod('bank')">
-                    <span class="method-icon">🏦</span>
-                    <div class="method-info">
-                      <div class="method-name">Bank Transfer</div>
-                      <div class="method-desc">EFT or direct bank transfer</div>
-                    </div>
-                    <span class="method-arrow">›</span>
-                  </button>
-                </div>
-              }
-
-              <!-- STEP 2a: M-Pesa -->
+              <!-- STEP 1: M-Pesa details -->
               @if (payStep() === 'mpesa') {
                 <form [formGroup]="mpesaForm">
                   <div class="mpesa-logo-bar mb-3">
@@ -219,101 +298,18 @@ type PayStep = 'method' | 'mpesa' | 'card' | 'bank' | 'confirm';
                 </form>
               }
 
-              <!-- STEP 2b: Credit Card -->
-              @if (payStep() === 'card') {
-                <form [formGroup]="cardForm">
-                  <div class="card-logos mb-3 d-flex gap-2">
-                    <span class="card-logo-badge visa">VISA</span>
-                    <span class="card-logo-badge mc">MC</span>
-                    <span class="card-logo-badge amex">AMEX</span>
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Card Number</label>
-                    <input type="text" class="form-control font-mono" formControlName="cardNumber"
-                      placeholder="1234 5678 9012 3456" maxlength="19"
-                      (input)="formatCard($event)"
-                      [class.is-invalid]="cardForm.get('cardNumber')?.invalid && cardForm.get('cardNumber')?.touched">
-                    @if (cardForm.get('cardNumber')?.invalid && cardForm.get('cardNumber')?.touched) {
-                      <div class="invalid-feedback">Enter a valid 16-digit card number</div>
-                    }
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Cardholder Name</label>
-                    <input type="text" class="form-control" formControlName="name"
-                      placeholder="JOHN DOE"
-                      [class.is-invalid]="cardForm.get('name')?.invalid && cardForm.get('name')?.touched">
-                    @if (cardForm.get('name')?.invalid && cardForm.get('name')?.touched) {
-                      <div class="invalid-feedback">Name is required</div>
-                    }
-                  </div>
-                  <div class="row g-2 mb-3">
-                    <div class="col-6">
-                      <label class="form-label">Expiry (MM/YY)</label>
-                      <input type="text" class="form-control font-mono" formControlName="expiry"
-                        placeholder="12/28" maxlength="5"
-                        [class.is-invalid]="cardForm.get('expiry')?.invalid && cardForm.get('expiry')?.touched">
-                    </div>
-                    <div class="col-6">
-                      <label class="form-label">CVV</label>
-                      <input type="password" class="form-control font-mono" formControlName="cvv"
-                        placeholder="•••" maxlength="4"
-                        [class.is-invalid]="cardForm.get('cvv')?.invalid && cardForm.get('cvv')?.touched">
-                    </div>
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Amount (KSh)</label>
-                    <input type="number" class="form-control" formControlName="amount"
-                      [max]="payingContrib()!.balance">
-                    <div class="form-text">Max: {{ payingContrib()!.balance | ksh }}</div>
-                  </div>
-                  <div class="alert alert-info py-2" style="font-size:.82rem">
-                    🔒 Your card details are encrypted and processed securely.
-                  </div>
-                </form>
-              }
-
-              <!-- STEP 2c: Bank Transfer -->
-              @if (payStep() === 'bank') {
-                <form [formGroup]="bankForm">
-                  <div class="bank-details mb-3 p-3 bg-light rounded">
-                    <div class="text-muted-sm mb-1">Transfer to:</div>
-                    <div class="fw-bold">Estate Management Account</div>
-                    <div class="font-mono">Bank: KCB Kenya</div>
-                    <div class="font-mono">Account: 1234567890</div>
-                    <div class="font-mono">Branch: Nairobi Main</div>
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Bank Reference Number</label>
-                    <input type="text" class="form-control" formControlName="reference"
-                      placeholder="Enter your bank transaction reference"
-                      [class.is-invalid]="bankForm.get('reference')?.invalid && bankForm.get('reference')?.touched">
-                    @if (bankForm.get('reference')?.invalid && bankForm.get('reference')?.touched) {
-                      <div class="invalid-feedback">Reference is required for bank payments</div>
-                    }
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Amount (KSh)</label>
-                    <input type="number" class="form-control" formControlName="amount"
-                      [max]="payingContrib()!.balance">
-                    <div class="form-text">Max: {{ payingContrib()!.balance | ksh }}</div>
-                  </div>
-                </form>
-              }
-
-              <!-- STEP 3: Confirm -->
+              <!-- STEP 2: Confirm -->
               @if (payStep() === 'confirm') {
                 <div class="text-center py-2">
-                  <div style="font-size:3rem">{{ confirmIcon() }}</div>
-                  <h6 class="mt-2 fw-bold">Confirm Payment</h6>
+                  <div style="font-size:3rem">📱</div>
+                  <h6 class="mt-2 fw-bold">Confirm M-Pesa Payment</h6>
                   <div class="bg-light rounded p-3 text-start mt-3">
                     <table class="table table-sm table-borderless mb-0">
                       <tr><td class="text-muted-sm">Category</td><td class="fw-semibold">{{ payingContrib()!.contributionType.name }}</td></tr>
                       <tr><td class="text-muted-sm">Period</td><td class="fw-semibold">{{ payingContrib()!.period }}</td></tr>
-                      <tr><td class="text-muted-sm">Method</td><td class="fw-semibold">{{ methodLabel() }}</td></tr>
-                      <tr><td class="text-muted-sm">Amount</td><td class="fw-bold text-primary" style="font-size:1.1rem">{{ payAmount() | ksh }}</td></tr>
-                      @if (payReference()) {
-                        <tr><td class="text-muted-sm">Reference</td><td class="font-mono">{{ payReference() }}</td></tr>
-                      }
+                      <tr><td class="text-muted-sm">Method</td><td class="fw-semibold">📱 M-Pesa</td></tr>
+                      <tr><td class="text-muted-sm">Amount</td><td class="fw-bold text-primary" style="font-size:1.1rem">{{ mpesaForm.value.amount | ksh }}</td></tr>
+                      <tr><td class="text-muted-sm">Phone</td><td class="font-mono">+254{{ mpesaForm.value.phone }}</td></tr>
                     </table>
                   </div>
                 </div>
@@ -322,18 +318,14 @@ type PayStep = 'method' | 'mpesa' | 'card' | 'bank' | 'confirm';
             </div><!-- /modal-body -->
 
             <div class="modal-footer">
-              @if (payStep() === 'method') {
+              @if (payStep() === 'mpesa') {
                 <button class="btn btn-outline-secondary" (click)="closeModal()">Cancel</button>
-              } @else if (payStep() === 'confirm') {
-                <button class="btn btn-outline-secondary" (click)="backStep()">‹ Back</button>
+                <button class="btn btn-primary" (click)="nextStep()">Continue ›</button>
+              } @else {
+                <button class="btn btn-outline-secondary" (click)="payStep.set('mpesa')">‹ Back</button>
                 <button class="btn btn-primary" (click)="submitPayment()" [disabled]="payLoading()">
                   @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
-                  Confirm & Pay {{ payAmount() | ksh }}
-                </button>
-              } @else {
-                <button class="btn btn-outline-secondary" (click)="payStep.set('method')">‹ Back</button>
-                <button class="btn btn-primary" (click)="nextStep()">
-                  Continue ›
+                  Confirm & Pay {{ mpesaForm.value.amount | ksh }}
                 </button>
               }
             </div>
@@ -392,12 +384,14 @@ export class PendingComponent implements OnInit {
   pending = signal<Contribution[]>([]);
   loading = signal(true);
   payingContrib = signal<Contribution | null>(null);
-  payStep = signal<PayStep>('method');
+  payStep = signal<PayStep>('mpesa');
   payLoading = signal(false);
 
+  // Bulk pay
+  bulkItems = signal<Contribution[]>([]);
+  bulkPayStep = signal<PayStep>('mpesa');
+
   mpesaForm: FormGroup;
-  cardForm: FormGroup;
-  bankForm: FormGroup;
 
   totalOwed = computed(() => this.pending().reduce((s, c) => s + c.balance, 0));
 
@@ -430,17 +424,6 @@ export class PendingComponent implements OnInit {
       phone: ['', [Validators.required, Validators.pattern(/^7\d{8}$/)]],
       amount: [0, [Validators.required, Validators.min(1)]]
     });
-    this.cardForm = this.fb.group({
-      cardNumber: ['', [Validators.required, Validators.pattern(/^\d{4} \d{4} \d{4} \d{4}$/)]],
-      name: ['', Validators.required],
-      expiry: ['', [Validators.required, Validators.pattern(/^\d{2}\/\d{2}$/)]],
-      cvv: ['', [Validators.required, Validators.pattern(/^\d{3,4}$/)]],
-      amount: [0, [Validators.required, Validators.min(1)]]
-    });
-    this.bankForm = this.fb.group({
-      reference: ['', Validators.required],
-      amount: [0, [Validators.required, Validators.min(1)]]
-    });
   }
 
   ngOnInit() { this.load(); }
@@ -456,10 +439,8 @@ export class PendingComponent implements OnInit {
 
   openPay(c: Contribution) {
     this.payingContrib.set(c);
-    this.payStep.set('method');
+    this.payStep.set('mpesa');
     this.mpesaForm.patchValue({ amount: c.balance, phone: '' });
-    this.cardForm.patchValue({ amount: c.balance, cardNumber: '', name: '', expiry: '', cvv: '' });
-    this.bankForm.patchValue({ amount: c.balance, reference: '' });
   }
 
   payAll() {
@@ -469,74 +450,27 @@ export class PendingComponent implements OnInit {
 
   closeModal() {
     this.payingContrib.set(null);
-    this.payStep.set('method');
+    this.payStep.set('mpesa');
   }
-
-  selectMethod(m: 'mpesa' | 'card' | 'bank') { this.payStep.set(m); }
 
   nextStep() {
-    const step = this.payStep();
-    if (step === 'mpesa') {
-      this.mpesaForm.markAllAsTouched();
-      if (this.mpesaForm.invalid) return;
-    } else if (step === 'card') {
-      this.cardForm.markAllAsTouched();
-      if (this.cardForm.invalid) return;
-    } else if (step === 'bank') {
-      this.bankForm.markAllAsTouched();
-      if (this.bankForm.invalid) return;
-    }
+    this.mpesaForm.markAllAsTouched();
+    if (this.mpesaForm.invalid) return;
     this.payStep.set('confirm');
-  }
-
-  backStep() {
-    const step = this.payStep();
-    if (step === 'confirm') this.payStep.set(this._currentMethod as PayStep);
-  }
-
-  private get _currentMethod(): string {
-    if (this.mpesaForm.get('phone')?.dirty) return 'mpesa';
-    if (this.cardForm.get('cardNumber')?.dirty) return 'card';
-    return 'bank';
-  }
-
-  payAmount(): number {
-    const step = this.payStep();
-    if (step === 'mpesa' || step === 'confirm' && this._currentMethod === 'mpesa') return this.mpesaForm.value.amount ?? 0;
-    if (step === 'card'  || step === 'confirm' && this._currentMethod === 'card')  return this.cardForm.value.amount ?? 0;
-    return this.bankForm.value.amount ?? 0;
-  }
-
-  payReference(): string {
-    const m = this._currentMethod;
-    if (m === 'mpesa') return `+254${this.mpesaForm.value.phone}`;
-    if (m === 'bank')  return this.bankForm.value.reference;
-    return `CARD-${(this.cardForm.value.cardNumber ?? '').slice(-4)}`;
-  }
-
-  methodLabel(): string {
-    const m = this._currentMethod;
-    return m === 'mpesa' ? 'M-Pesa' : m === 'card' ? 'Credit/Debit Card' : 'Bank Transfer';
-  }
-
-  confirmIcon(): string {
-    const m = this._currentMethod;
-    return m === 'mpesa' ? '📱' : m === 'card' ? '💳' : '🏦';
   }
 
   submitPayment() {
     const c = this.payingContrib();
     if (!c) return;
-    const method = this._currentMethod === 'mpesa' ? 'MPESA' : this._currentMethod === 'card' ? 'CREDIT_CARD' : 'BANK';
-    const amount = this.payAmount();
-    const ref = this.payReference();
+    const amount = this.mpesaForm.value.amount;
+    const ref = `+254${this.mpesaForm.value.phone}`;
 
     this.payLoading.set(true);
-    this.contribSvc.pay(c.id, amount, method, ref).subscribe({
+    this.contribSvc.pay(c.id, amount, 'MPESA', ref).subscribe({
       next: () => {
         this.payLoading.set(false);
         this.closeModal();
-        this.toast.success(`Payment of ${new KshCurrencyPipe().transform(amount)} via ${this.methodLabel()} recorded!`);
+        this.toast.success(`M-Pesa payment of ${new KshCurrencyPipe().transform(amount)} recorded!`);
         this.load();
       },
       error: err => {
@@ -546,12 +480,48 @@ export class PendingComponent implements OnInit {
     });
   }
 
-  formatCard(event: Event) {
-    const input = event.target as HTMLInputElement;
-    let v = input.value.replace(/\D/g, '').substring(0, 16);
-    v = v.replace(/(\d{4})(?=\d)/g, '$1 ');
-    input.value = v;
-    this.cardForm.patchValue({ cardNumber: v }, { emitEvent: false });
+  // ── Bulk pay ─────────────────────────────────────────────
+  bulkTotal(items: Contribution[], count: number): number {
+    return items.slice(0, count).reduce((s, c) => s + c.balance, 0);
+  }
+
+  openBulkPay(items: Contribution[]) {
+    this.bulkItems.set(items);
+    this.bulkPayStep.set('mpesa');
+    this.mpesaForm.patchValue({ phone: '' });
+  }
+
+  closeBulkModal() {
+    this.bulkItems.set([]);
+    this.bulkPayStep.set('mpesa');
+  }
+
+  nextBulkStep() {
+    this.mpesaForm.get('phone')?.markAsTouched();
+    if (this.mpesaForm.get('phone')?.invalid) return;
+    this.bulkPayStep.set('confirm');
+  }
+
+  submitBulkPayment() {
+    const items = this.bulkItems();
+    if (!items.length) return;
+    const ids = items.map(c => c.id);
+    const ref = `+254${this.mpesaForm.value.phone}`;
+
+    this.payLoading.set(true);
+    this.contribSvc.bulkPay(ids, 'MPESA', ref).subscribe({
+      next: () => {
+        this.payLoading.set(false);
+        this.closeBulkModal();
+        const total = new KshCurrencyPipe().transform(items.reduce((s, c) => s + c.balance, 0));
+        this.toast.success(`Bulk payment of ${total} for ${items.length} month(s) recorded!`);
+        this.load();
+      },
+      error: err => {
+        this.payLoading.set(false);
+        this.toast.error(err.error?.message ?? 'Bulk payment failed. Please try again.');
+      }
+    });
   }
 
   typeIcon(name: string) {

@@ -25,6 +25,10 @@ export class ContributionService {
     return this.http.post<Payment>(`${this.base}/${contributionId}/pay`, null, { params });
   }
 
+  bulkPay(ids: number[], method: string, reference?: string) {
+    return this.http.post<any[]>(`${this.base}/bulk-pay`, { ids, method, reference });
+  }
+
   generateForPeriod(period: string) {
     return this.http.post<string>(
       `${this.base}/admin/generate`, null,

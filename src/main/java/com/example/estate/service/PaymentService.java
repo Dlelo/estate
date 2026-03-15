@@ -6,7 +6,10 @@ import com.example.estate.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import com.example.estate.dto.BulkPaymentRequest;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -54,5 +57,17 @@ public class PaymentService {
         contributionRepository.save(contribution);
 
         return payment;
+    }
+
+    public List<Payment> bulkPay(BulkPaymentRequest req) {
+        List<Payment> payments = new ArrayList<>();
+        for (Long id : req.getIds()) {
+            Contribution c = contributionRepository.findById(id)
+                    .orElseThrow(() -> new RuntimeException("Contribution not found: " + id));
+            if (Boolean.FALSE.equals(c.getSettled())) {
+                payments.add(makePayment(id, c.getBalance(), req.getMethod(), req.getReference()));
+            }
+        }
+        return payments;
     }
 }

@@ -6,7 +6,7 @@ import { NotificationService, SendNotificationRequest, NotificationType } from '
 import { ToastService } from '../../../core/services/toast.service';
 import { User } from '../../../core/models';
 
-type Modal = 'edit' | 'roles' | 'notify' | 'notifyAll' | null;
+type Modal = 'edit' | 'roles' | 'notify' | 'notifyAll' | 'reminders' | null;
 
 @Component({
   selector: 'app-admin-users',
@@ -66,9 +66,12 @@ type Modal = 'edit' | 'roles' | 'notify' | 'notifyAll' | null;
             <label class="form-label">&nbsp;</label>
             <button class="btn btn-outline-secondary d-block w-100" (click)="clearSearch()">Clear</button>
           </div>
-          <div class="col-sm-4 text-sm-end">
+          <div class="col-sm-4 text-sm-end d-flex gap-2 justify-content-sm-end">
+            <button class="btn btn-danger fw-semibold" (click)="openModal('reminders', null)">
+              💳 Send Reminders
+            </button>
             <button class="btn btn-warning fw-semibold" (click)="openModal('notifyAll', null)">
-              📢 Broadcast Notification
+              📢 Broadcast
             </button>
           </div>
         </div>
@@ -342,6 +345,38 @@ type Modal = 'edit' | 'roles' | 'notify' | 'notifyAll' | null;
       </div>
     }
 
+    <!-- ── PAYMENT REMINDERS MODAL ──────────────────────────────── -->
+    @if (activeModal() === 'reminders') {
+      <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.5)">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header" style="background:#c0392b;color:#fff;border-radius:16px 16px 0 0">
+              <h5 class="modal-title">💳 Send Payment Reminders</h5>
+              <button type="button" class="btn-close btn-close-white" (click)="closeModal()"></button>
+            </div>
+            <div class="modal-body">
+              <div class="alert alert-danger py-2 mb-4" style="font-size:.82rem">
+                💳 Sends a <strong>PAYMENT_REMINDER</strong> notification to every active member
+                who has <strong>unsettled contributions</strong> for the selected period.
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Contribution Period</label>
+                <input type="month" class="form-control" [(ngModel)]="reminderPeriod">
+                <div class="form-text">Members with unpaid contributions for this month will be notified.</div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-outline-secondary" (click)="closeModal()">Cancel</button>
+              <button class="btn btn-danger fw-semibold" (click)="sendReminders()" [disabled]="actionLoading() || !reminderPeriod">
+                @if (actionLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                Send Reminders
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
     <!-- Shared notify form template -->
     <ng-template #notifyForm>
       <form [formGroup]="notifyFormGroup">
@@ -415,6 +450,7 @@ export class AdminUsersComponent implements OnInit {
 
   searchName = '';
   searchActive: boolean | null = null;
+  reminderPeriod = new Date().toISOString().slice(0, 7); // default to current month YYYY-MM
 
   editForm: FormGroup;
   notifyFormGroup: FormGroup;
@@ -570,6 +606,19 @@ export class AdminUsersComponent implements OnInit {
     this.userSvc.deleteUser(u.id).subscribe({
       next: () => { this.toast.success('Member deleted'); this.load(); },
       error: () => this.toast.error('Failed to delete member')
+    });
+  }
+
+  sendReminders() {
+    if (!this.reminderPeriod) return;
+    this.actionLoading.set(true);
+    this.notifSvc.remindUnpaid(this.reminderPeriod).subscribe({
+      next: res => {
+        this.actionLoading.set(false);
+        this.closeModal();
+        this.toast.success(res.message ?? `Reminders sent to ${res.reminded} member(s)`);
+      },
+      error: err => { this.actionLoading.set(false); this.toast.error(err.error?.message ?? 'Failed to send reminders'); }
     });
   }
 

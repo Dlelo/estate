@@ -1,4 +1,4 @@
-name: Deploy to DigitalOcean
+name: Build & Deploy to DigitalOcean
 
 on:
   push:
@@ -6,11 +6,34 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to Droplet via SSH
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t estate-backend:latest .
+
+      - name: Build frontend image
+        run: docker build -t estate-frontend:latest ./frontend
+
+      - name: Save images to tar files
+        run: |
+          docker save estate-backend:latest | gzip > backend.tar.gz
+          docker save estate-frontend:latest | gzip > frontend.tar.gz
+
+      - name: Copy images to droplet
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DO_DROPLET_IP }}
+          username: ${{ secrets.DO_DROPLET_USER }}
+          password: ${{ secrets.DO_DROPLET_PASSWORD }}
+          source: "backend.tar.gz,frontend.tar.gz"
+          target: "/tmp/"
+
+      - name: Load images and restart containers
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DO_DROPLET_IP }}
@@ -19,15 +42,14 @@ jobs:
           script: |
             set -e
 
-            # Clone repo on first deploy, pull on subsequent ones
-            if [ ! -d ~/estate-manager ]; then
-              git clone https://github.com/Dlelo/estate.git ~/estate-manager
-            fi
+            # Load new images
+            docker load < /tmp/backend.tar.gz
+            docker load < /tmp/frontend.tar.gz
+            rm /tmp/backend.tar.gz /tmp/frontend.tar.gz
+
+            # Restart only backend and frontend (MySQL keeps running)
             cd ~/estate-manager
-            git pull origin main
+            docker compose up -d --no-deps --force-recreate backend frontend
 
-            # Rebuild and redeploy (only changed layers rebuild)
-            docker compose up --build -d --remove-orphans
-
-            # Clean up dangling images from previous builds
+            # Clean up
             docker image prune -f

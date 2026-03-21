@@ -18,9 +18,12 @@ jobs:
           password: ${{ secrets.DO_DROPLET_PASSWORD }}
           script: |
             set -e
-            cd ~/estate-manager
 
-            # Pull latest code
+            # Clone repo on first deploy, pull on subsequent ones
+            if [ ! -d ~/estate-manager ]; then
+              git clone https://github.com/Dlelo/estate.git ~/estate-manager
+            fi
+            cd ~/estate-manager
             git pull origin main
 
             # Rebuild and redeploy (only changed layers rebuild)

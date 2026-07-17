@@ -1,4 +1,4 @@
-package com.example.estate.controller;
+package com.example.estate.controllers;
 
 import com.example.estate.dto.*;
 import com.example.estate.model.Role;
@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Set;
@@ -42,6 +43,28 @@ public class UserController {
         return userService
                 .searchUsers(name, phone, active, pageable)
                 .map(this::mapToDTO);
+    }
+
+    // ✅ Self-service: get the authenticated user's own profile
+    @GetMapping("/me")
+    public UserResponseDTO getSelf(Authentication authentication) {
+        return mapToDTO(userService.getSelf(authentication.getName()));
+    }
+
+    // ✅ Admin: look up a single member (e.g. to header a statement/detail page)
+    @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public UserResponseDTO getById(@PathVariable Long id) {
+        return mapToDTO(userService.getById(id));
+    }
+
+    // ✅ Self-service: update the authenticated user's own profile
+    @PutMapping("/me")
+    public UserResponseDTO updateSelf(
+            Authentication authentication,
+            @Valid @RequestBody UpdateSelfRequest request
+    ) {
+        return mapToDTO(userService.updateSelf(authentication.getName(), request));
     }
 
     // ✅ Update user basic info
@@ -79,6 +102,7 @@ public class UserController {
     }
 
     // ✅ Soft delete
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public void deleteUser(@PathVariable Long id) {
@@ -97,6 +121,7 @@ public class UserController {
                 user.getId(),
                 user.getFullName(),
                 user.getPhoneNumber(),
+                user.getEmail(),
                 user.getHouseNumber(),
                 user.getActive(),
                 roles,

@@ -46,6 +46,7 @@ public class AuthController {
                 .phoneNumber(request.getPhoneNumber())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .houseNumber(request.getHouseNumber())
+                .email(request.getEmail())
                 .roles(roles)
                 .active(true)
                 .build();

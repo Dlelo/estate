@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed, AfterViewInit, ElementRef, ViewChild } from '@angular/core';
+import { Component, OnInit, signal, computed, ElementRef, ViewChild, Injector, afterNextRender, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ContributionService } from '../../core/services/contribution.service';
@@ -7,6 +7,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { KshCurrencyPipe } from '../../shared/pipes/ksh-currency.pipe';
 import { Contribution, EstateSummary } from '../../core/models';
+import { periodSortKey } from '../../shared/period.util';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -82,10 +83,14 @@ Chart.register(...registerables);
                     <div style="font-size:1.5rem;font-weight:700;color:var(--accent)">
                       {{ estateSummary()!.unpaidCount }}
                     </div>
-                    <div class="text-muted-sm">Unpaid Contributions</div>
+                    <div class="text-muted-sm">Unpaid Contributions (charges owed)</div>
+                    @if (estateSummary()!.unpaidWithPendingPaymentCount > 0) {
+                      <div class="text-muted-sm">{{ estateSummary()!.unpaidWithPendingPaymentCount }} with a payment in progress</div>
+                    }
                   </div>
                 </div>
               </div>
+              <div class="text-muted-sm mt-2">Estate-wide totals across all members</div>
             </div>
           </div>
         </div>
@@ -97,12 +102,17 @@ Chart.register(...registerables);
       <div class="col-md-6">
         <div class="panel h-100">
           <div class="panel-header">
-            <span>🍩</span><h5>By Category</h5>
+            <span>🍩</span><h5>By Category (My Contributions)</h5>
           </div>
           <div class="panel-body">
             @if (loading()) {
               <div class="text-center py-4">
                 <div class="spinner-border text-primary" style="width:2rem;height:2rem"></div>
+              </div>
+            } @else if (!contributions().length) {
+              <div class="text-center py-4 text-muted">
+                <div style="font-size:2rem">📭</div>
+                <p class="mb-0">No contribution data yet</p>
               </div>
             } @else {
               <div class="chart-wrapper">
@@ -117,12 +127,17 @@ Chart.register(...registerables);
       <div class="col-md-6">
         <div class="panel h-100">
           <div class="panel-header">
-            <span>📈</span><h5>Monthly Payments</h5>
+            <span>📈</span><h5>Monthly Payments (My Contributions)</h5>
           </div>
           <div class="panel-body">
             @if (loading()) {
               <div class="text-center py-4">
                 <div class="spinner-border text-primary" style="width:2rem;height:2rem"></div>
+              </div>
+            } @else if (!contributions().length) {
+              <div class="text-center py-4 text-muted">
+                <div style="font-size:2rem">📭</div>
+                <p class="mb-0">No contribution data yet</p>
               </div>
             } @else {
               <div class="chart-wrapper">
@@ -190,9 +205,11 @@ Chart.register(...registerables);
     </div>
   `
 })
-export class DashboardComponent implements OnInit, AfterViewInit {
+export class DashboardComponent implements OnInit {
   @ViewChild('doughnut') doughnutRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('bar') barRef!: ElementRef<HTMLCanvasElement>;
+
+  private injector = inject(Injector);
 
   contributions = signal<Contribution[]>([]);
   estateSummary = signal<EstateSummary | null>(null);
@@ -216,7 +233,6 @@ export class DashboardComponent implements OnInit, AfterViewInit {
 
   private doughnutChart?: Chart;
   private barChart?: Chart;
-  private chartsReady = false;
 
   constructor(
     public auth: AuthService,
@@ -229,22 +245,22 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     this.load();
   }
 
-  ngAfterViewInit() {
-    this.chartsReady = true;
-    if (!this.loading()) this.buildCharts();
-  }
-
   load() {
     this.loading.set(true);
-    const userId = this.auth.getUserIdFromToken();
+    const uid = this.auth.getUserIdFromToken();
 
-    // Use a fallback: try to get contributions for user 1 if no userId in token
-    const uid = userId ?? 1;
+    if (uid == null) {
+      this.loading.set(false);
+      this.toast.error('Session invalid — please log in again.');
+      this.auth.logout();
+      return;
+    }
+
     this.contribSvc.getByUser(uid).subscribe({
       next: data => {
         this.contributions.set(data);
         this.loading.set(false);
-        if (this.chartsReady) this.buildCharts();
+        this.scheduleChartBuild();
       },
       error: () => {
         this.loading.set(false);
@@ -258,6 +274,14 @@ export class DashboardComponent implements OnInit, AfterViewInit {
         error: () => {}
       });
     }
+  }
+
+  /** The canvas elements only exist once Angular has rendered the "data loaded" template
+   *  branch, which happens after this synchronous callback returns — afterNextRender defers
+   *  the chart build until that render has actually happened, so ViewChild refs are populated. */
+  private scheduleChartBuild() {
+    if (!this.contributions().length) return;
+    afterNextRender(() => this.buildCharts(), { injector: this.injector });
   }
 
   buildCharts() {
@@ -291,7 +315,7 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     this.contributions().forEach(c => {
       byPeriod[c.period] = (byPeriod[c.period] ?? 0) + c.paidAmount;
     });
-    const sorted = Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(-6);
+    const sorted = Object.entries(byPeriod).sort(([a], [b]) => periodSortKey(a) - periodSortKey(b)).slice(-6);
     if (this.barChart) this.barChart.destroy();
     this.barChart = new Chart(this.barRef.nativeElement, {
       type: 'bar',

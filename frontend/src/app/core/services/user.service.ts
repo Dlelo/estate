@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { User, PageResponse, UpdateUserRequest, UpdateUserRolesRequest, Role } from '../models';
+import { User, PageResponse, UpdateUserRequest, UpdateUserRolesRequest, UpdateSelfRequest } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class UserService {
@@ -27,6 +27,18 @@ export class UserService {
 
   updateUser(id: number, req: UpdateUserRequest) {
     return this.http.put<void>(`${this.base}/${id}`, req);
+  }
+
+  getMe() {
+    return this.http.get<User>(`${this.base}/me`);
+  }
+
+  getById(id: number) {
+    return this.http.get<User>(`${this.base}/${id}`);
+  }
+
+  updateMe(req: UpdateSelfRequest) {
+    return this.http.put<User>(`${this.base}/me`, req);
   }
 
   updateRoles(id: number, req: UpdateUserRolesRequest) {

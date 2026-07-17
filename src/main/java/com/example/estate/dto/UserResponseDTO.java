@@ -8,6 +8,7 @@ public record UserResponseDTO(
         Long id,
         String fullName,
         String phoneNumber,
+        String email,
         String houseNumber,
         Boolean active,
         Set<String> roles,

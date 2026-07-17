@@ -1,5 +1,6 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule, NgTemplateOutlet } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { UserService } from '../../../core/services/user.service';
 import { NotificationService, SendNotificationRequest, NotificationType } from '../../../core/services/notification.service';
@@ -11,7 +12,7 @@ type Modal = 'edit' | 'roles' | 'notify' | 'notifyAll' | 'reminders' | null;
 @Component({
   selector: 'app-admin-users',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, NgTemplateOutlet],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, NgTemplateOutlet, RouterLink],
   template: `
     <!-- Stats Bar -->
     <div class="row g-3 mb-4">
@@ -162,6 +163,9 @@ type Modal = 'edit' | 'roles' | 'notify' | 'notifyAll' | 'reminders' | null;
                         <!-- Notify -->
                         <button class="btn btn-icon btn-outline-info" title="Send notification"
                           (click)="openModal('notify', u)">🔔</button>
+                        <!-- Statement -->
+                        <a class="btn btn-icon btn-outline-dark" title="View statement"
+                          [routerLink]="['/admin/members', u.id, 'statement']">🧾</a>
                         <!-- Delete -->
                         <button class="btn btn-icon btn-outline-danger" title="Delete"
                           (click)="confirmDelete(u)">🗑️</button>
@@ -580,10 +584,36 @@ export class AdminUsersComponent implements OnInit {
       next: res => {
         this.actionLoading.set(false);
         this.closeModal();
-        this.toast.success(res.message ?? 'Notification sent');
+        this.toast.success(res.message ?? 'Notification queued');
+        this.pollDeliverySummary(res.batchId);
       },
       error: err => { this.actionLoading.set(false); this.toast.error(err.error?.message ?? 'Failed to send'); }
     });
+  }
+
+  /** Email/SMS delivery is async — check back a few seconds after queuing to report actual outcomes,
+   *  not just "queued". Runs once; a persistent misconfiguration (e.g. no provider credentials) will
+   *  show up as "0 delivered" here rather than an optimistic success toast. */
+  private pollDeliverySummary(batchId: string) {
+    setTimeout(() => {
+      this.notifSvc.getBatchSummary(batchId).subscribe({
+        next: summary => {
+          const parts: string[] = [];
+          if (summary.email.delivered || summary.email.failed) {
+            parts.push(`Email: ${summary.email.delivered} delivered, ${summary.email.failed} failed`);
+          }
+          if (summary.sms.delivered || summary.sms.failed) {
+            parts.push(`SMS: ${summary.sms.delivered} delivered, ${summary.sms.failed} failed`);
+          }
+          if (parts.length) {
+            this.toast.info(parts.join(' · '));
+          } else {
+            this.toast.info('No email/SMS delivered — check that provider credentials are configured.');
+          }
+        },
+        error: () => {}
+      });
+    }, 4000);
   }
 
   archiveUser(u: User) {
@@ -616,7 +646,8 @@ export class AdminUsersComponent implements OnInit {
       next: res => {
         this.actionLoading.set(false);
         this.closeModal();
-        this.toast.success(res.message ?? `Reminders sent to ${res.reminded} member(s)`);
+        this.toast.success(res.message ?? `Reminders queued for ${res.reminded} member(s)`);
+        this.pollDeliverySummary(res.batchId);
       },
       error: err => { this.actionLoading.set(false); this.toast.error(err.error?.message ?? 'Failed to send reminders'); }
     });

@@ -22,6 +22,25 @@ export interface SendNotificationRequest {
   type: NotificationType;
 }
 
+export interface SendBatchResult {
+  sent?: number;
+  reminded?: number;
+  batchId: string;
+  message: string;
+}
+
+export interface ChannelDeliverySummary {
+  delivered: number;
+  failed: number;
+  pending: number;
+}
+
+export interface BatchDeliverySummary {
+  total: number;
+  email: ChannelDeliverySummary;
+  sms: ChannelDeliverySummary;
+}
+
 @Injectable({ providedIn: 'root' })
 export class NotificationService {
   private base = `${environment.apiUrl}/api/notifications`;
@@ -51,14 +70,18 @@ export class NotificationService {
   }
 
   send(req: SendNotificationRequest) {
-    return this.http.post<{ sent: number; message: string }>(`${this.base}/send`, req);
+    return this.http.post<SendBatchResult>(`${this.base}/send`, req);
   }
 
   remindUnpaid(period: string) {
-    return this.http.post<{ reminded: number; message: string }>(
+    return this.http.post<SendBatchResult>(
       `${this.base}/remind-unpaid`,
       null,
       { params: { period } }
     );
+  }
+
+  getBatchSummary(batchId: string) {
+    return this.http.get<BatchDeliverySummary>(`${this.base}/batch/${batchId}/summary`);
   }
 }

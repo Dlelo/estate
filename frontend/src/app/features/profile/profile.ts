@@ -32,77 +32,67 @@ import { ToastService } from '../../core/services/toast.service';
             <span>✏️</span><h5>Update Profile</h5>
           </div>
           <div class="panel-body">
-            <form [formGroup]="profileForm" (ngSubmit)="save()">
-              <div class="mb-3">
-                <label class="form-label">Full Name</label>
-                <input type="text" class="form-control" formControlName="fullName"
-                  [class.is-invalid]="touched('fullName')" placeholder="John Doe">
-                @if (touched('fullName')) {
-                  <div class="invalid-feedback">Full name is required</div>
+            @if (loadingProfile()) {
+              <div class="text-center py-4">
+                <span class="spinner-border spinner-border-sm me-2"></span> Loading profile...
+              </div>
+            } @else {
+              <form [formGroup]="profileForm" (ngSubmit)="save()">
+                <div class="mb-3">
+                  <label class="form-label">Full Name</label>
+                  <input type="text" class="form-control" formControlName="fullName"
+                    [class.is-invalid]="touched('fullName')" placeholder="John Doe">
+                  @if (touched('fullName')) {
+                    <div class="invalid-feedback">Full name is required</div>
+                  }
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">Phone Number</label>
+                  <input type="tel" class="form-control" [value]="auth.currentUser()?.phoneNumber" disabled>
+                  <div class="form-text">Phone number cannot be changed</div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">House Number</label>
+                  <input type="text" class="form-control" formControlName="houseNumber" placeholder="e.g. A12, B5">
+                </div>
+
+                <div class="mb-4">
+                  <label class="form-label">Email <span class="text-muted">(for payment receipts &amp; notifications)</span></label>
+                  <input type="email" class="form-control" formControlName="email"
+                    [class.is-invalid]="touched('email')" placeholder="you@example.com">
+                  @if (touched('email')) {
+                    <div class="invalid-feedback">Enter a valid email address</div>
+                  }
+                </div>
+
+                @if (error()) {
+                  <div class="alert alert-danger py-2 mb-3">{{ error() }}</div>
                 }
-              </div>
 
-              <div class="mb-3">
-                <label class="form-label">Phone Number</label>
-                <input type="tel" class="form-control" [value]="auth.currentUser()?.phoneNumber" disabled>
-                <div class="form-text">Phone number cannot be changed</div>
-              </div>
-
-              <div class="mb-4">
-                <label class="form-label">House Number</label>
-                <input type="text" class="form-control" formControlName="houseNumber" placeholder="e.g. A12, B5">
-              </div>
-
-              <div class="divider"></div>
-
-              <h6 class="mb-3">Change Password</h6>
-
-              <div class="mb-3">
-                <label class="form-label">New Password <span class="text-muted">(leave blank to keep current)</span></label>
-                <div class="input-group">
-                  <input [type]="showPass() ? 'text' : 'password'" class="form-control"
-                    formControlName="newPassword" placeholder="Min 6 characters">
-                  <button type="button" class="btn btn-outline-secondary" (click)="togglePass()">
-                    {{ showPass() ? '🙈' : '👁️' }}
+                <div class="d-flex gap-2">
+                  <button type="submit" class="btn btn-primary" [disabled]="saving()">
+                    @if (saving()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                    Save Changes
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary" (click)="logout()">
+                    🚪 Logout
                   </button>
                 </div>
-              </div>
-
-              <div class="mb-4">
-                <label class="form-label">Confirm New Password</label>
-                <input type="password" class="form-control" formControlName="confirmPassword"
-                  placeholder="Repeat new password"
-                  [class.is-invalid]="profileForm.hasError('mismatch') && profileForm.get('confirmPassword')?.touched">
-                @if (profileForm.hasError('mismatch') && profileForm.get('confirmPassword')?.touched) {
-                  <div class="invalid-feedback d-block">Passwords do not match</div>
-                }
-              </div>
-
-              @if (error()) {
-                <div class="alert alert-danger py-2 mb-3">{{ error() }}</div>
-              }
-
-              <div class="d-flex gap-2">
-                <button type="submit" class="btn btn-primary" [disabled]="loading()">
-                  @if (loading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
-                  Save Changes
-                </button>
-                <button type="button" class="btn btn-outline-secondary" (click)="logout()">
-                  🚪 Logout
-                </button>
-              </div>
-            </form>
+              </form>
+            }
           </div>
         </div>
       </div>
     </div>
   `
 })
-export class ProfileComponent {
+export class ProfileComponent implements OnInit {
   profileForm: FormGroup;
-  loading = signal(false);
+  loadingProfile = signal(false);
+  saving = signal(false);
   error = signal('');
-  showPass = signal(false);
 
   constructor(
     private fb: FormBuilder,
@@ -113,18 +103,26 @@ export class ProfileComponent {
     this.profileForm = this.fb.group({
       fullName: ['', Validators.required],
       houseNumber: [''],
-      newPassword: [''],
-      confirmPassword: ['']
-    }, { validators: this.passwordMatch });
+      email: ['', Validators.email]
+    });
   }
 
-  togglePass() { this.showPass.set(!this.showPass()); }
-
-  passwordMatch(g: FormGroup) {
-    const p = g.get('newPassword')?.value;
-    const c = g.get('confirmPassword')?.value;
-    if (!p) return null;
-    return p === c ? null : { mismatch: true };
+  ngOnInit() {
+    this.loadingProfile.set(true);
+    this.userSvc.getMe().subscribe({
+      next: user => {
+        this.profileForm.patchValue({
+          fullName: user.fullName,
+          houseNumber: user.houseNumber ?? '',
+          email: user.email ?? ''
+        });
+        this.loadingProfile.set(false);
+      },
+      error: err => {
+        this.loadingProfile.set(false);
+        this.toast.error(err.error?.message ?? 'Failed to load profile.');
+      }
+    });
   }
 
   touched(f: string) { const c = this.profileForm.get(f); return c?.invalid && c?.touched; }
@@ -137,9 +135,21 @@ export class ProfileComponent {
   save() {
     this.profileForm.markAllAsTouched();
     if (this.profileForm.invalid) return;
-    // Note: Profile updates would require a dedicated user profile endpoint
-    // For now we show a success toast as the backend may require userId
-    this.toast.info('Profile update feature requires backend user profile endpoint.');
+
+    this.saving.set(true);
+    this.error.set('');
+    this.userSvc.updateMe(this.profileForm.value).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.toast.success('Profile updated successfully.');
+      },
+      error: err => {
+        this.saving.set(false);
+        const msg = err.error?.message ?? 'Failed to update profile.';
+        this.error.set(msg);
+        this.toast.error(msg);
+      }
+    });
   }
 
   logout() { this.auth.logout(); }

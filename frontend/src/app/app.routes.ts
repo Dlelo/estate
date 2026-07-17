@@ -49,6 +49,11 @@ export const routes: Routes = [
         path: 'admin/contribution-types',
         loadComponent: () => import('./features/admin/contribution-types/admin-contribution-types').then(m => m.AdminContributionTypesComponent),
         canActivate: [adminGuard]
+      },
+      {
+        path: 'admin/members/:id/statement',
+        loadComponent: () => import('./features/admin/members/statement/member-statement').then(m => m.MemberStatementComponent),
+        canActivate: [adminGuard]
       }
     ]
   },

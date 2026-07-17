@@ -1,5 +1,6 @@
 package com.example.estate.dto;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
@@ -19,4 +20,7 @@ public class RegisterRequest {
     private String lastName;
 
     private String houseNumber;
+
+    @Email(message = "Must be a valid email address")
+    private String email;
 }

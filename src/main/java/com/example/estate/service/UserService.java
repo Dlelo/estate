@@ -1,5 +1,6 @@
 package com.example.estate.service;
 
+import com.example.estate.dto.UpdateSelfRequest;
 import com.example.estate.dto.UpdateUserRequest;
 import com.example.estate.dto.UpdateUserRolesRequest;
 import com.example.estate.model.Role;
@@ -49,12 +50,35 @@ public class UserService {
 
         user.setFullName(request.fullName());
         user.setHouseNumber(request.houseNumber());
+        user.setEmail(request.email());
 
         if (request.active() != null) {
             user.setActive(request.active());
         }
 
         return userRepository.save(user);
+    }
+
+    // ✅ Self-service: update the authenticated user's own profile (no active/roles)
+    public User updateSelf(String phoneNumber, UpdateSelfRequest request) {
+
+        User user = getUserByPhoneOrThrow(phoneNumber);
+
+        user.setFullName(request.fullName());
+        user.setHouseNumber(request.houseNumber());
+        user.setEmail(request.email());
+
+        return userRepository.save(user);
+    }
+
+    @Transactional(readOnly = true)
+    public User getSelf(String phoneNumber) {
+        return getUserByPhoneOrThrow(phoneNumber);
+    }
+
+    @Transactional(readOnly = true)
+    public User getById(Long userId) {
+        return getUserOrThrow(userId);
     }
 
     // ✅ Admin: Update user roles
@@ -89,6 +113,12 @@ public class UserService {
 
     private User getUserOrThrow(Long id) {
         return userRepository.findById(id)
+                .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
+                .orElseThrow(() -> new IllegalStateException("User not found"));
+    }
+
+    private User getUserByPhoneOrThrow(String phoneNumber) {
+        return userRepository.findByPhoneNumber(phoneNumber)
                 .filter(user -> !Boolean.TRUE.equals(user.getDeleted()))
                 .orElseThrow(() -> new IllegalStateException("User not found"));
     }

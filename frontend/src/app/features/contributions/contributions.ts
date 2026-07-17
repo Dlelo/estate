@@ -1,13 +1,16 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ContributionService } from '../../core/services/contribution.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { KshCurrencyPipe } from '../../shared/pipes/ksh-currency.pipe';
-import { Contribution, PaymentMethod } from '../../core/models';
+import { Contribution } from '../../core/models';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+
+type PayMethod = 'MPESA' | 'PAYBILL' | 'BANK';
+type StkPhase = 'idle' | 'pushed' | 'completed' | 'failed';
 
 @Component({
   selector: 'app-contributions',
@@ -153,7 +156,7 @@ import autoTable from 'jspdf-autotable';
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title">💳 Make Payment</h5>
-              <button type="button" class="btn-close" (click)="payingContrib.set(null)"></button>
+              <button type="button" class="btn-close" [disabled]="stkPhase() === 'pushed'" (click)="closeModal()"></button>
             </div>
             <div class="modal-body">
               @let c = payingContrib()!;
@@ -178,36 +181,142 @@ import autoTable from 'jspdf-autotable';
                 </div>
               </div>
 
-              <form [formGroup]="payForm">
-                <div class="mpesa-logo-bar mb-3">
-                  <div class="mpesa-badge">M-PESA</div>
-                  <span style="font-size:.8rem;color:#7f8c8d">Safaricom Kenya</span>
-                </div>
+              <!-- Method toggle -->
+              <div class="btn-group w-100 mb-3" role="group">
+                <button type="button" class="btn"
+                  [class.btn-primary]="payMethod() === 'MPESA'" [class.btn-outline-primary]="payMethod() !== 'MPESA'"
+                  [disabled]="stkPhase() === 'pushed'"
+                  (click)="payMethod.set('MPESA')">📱 STK Push</button>
+                <button type="button" class="btn"
+                  [class.btn-primary]="payMethod() === 'PAYBILL'" [class.btn-outline-primary]="payMethod() !== 'PAYBILL'"
+                  [disabled]="stkPhase() === 'pushed'"
+                  (click)="payMethod.set('PAYBILL')">🧾 Paybill</button>
+                <button type="button" class="btn"
+                  [class.btn-primary]="payMethod() === 'BANK'" [class.btn-outline-primary]="payMethod() !== 'BANK'"
+                  [disabled]="stkPhase() === 'pushed'"
+                  (click)="payMethod.set('BANK')">🏦 Bank Transfer</button>
+              </div>
 
-                <div class="mb-3">
-                  <label class="form-label">Amount (KSh)</label>
-                  <input type="number" class="form-control" formControlName="amount"
-                    [max]="c.balance" placeholder="Enter amount">
-                  <div class="form-text">Max: {{ c.balance | ksh }}</div>
-                </div>
+              @if (payMethod() === 'MPESA') {
+                <form [formGroup]="stkForm">
+                  <div class="mpesa-logo-bar mb-3">
+                    <div class="mpesa-badge">M-PESA</div>
+                    <span style="font-size:.8rem;color:#7f8c8d">Safaricom Kenya — paybill STK push</span>
+                  </div>
 
-                <div class="mb-3">
-                  <label class="form-label">M-Pesa Transaction Code</label>
-                  <input type="text" class="form-control" formControlName="reference"
-                    placeholder="e.g. QGH3X1ABCD">
-                </div>
+                  @if (stkPhase() === 'idle') {
+                    <div class="mb-3">
+                      <label class="form-label">Amount (KSh)</label>
+                      <input type="number" class="form-control" formControlName="amount"
+                        [max]="c.balance" placeholder="Enter amount">
+                      <div class="form-text">Max: {{ c.balance | ksh }}</div>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label">M-Pesa Phone Number</label>
+                      <input type="tel" class="form-control" formControlName="phoneNumber" placeholder="07XXXXXXXX">
+                    </div>
+                    <div class="alert alert-info py-2" style="font-size:.82rem">
+                      💡 You'll get a prompt on your phone to enter your M-Pesa PIN. No need to type a code here —
+                      it confirms automatically once you approve it.
+                    </div>
+                  }
 
-                <div class="alert alert-success py-2" style="font-size:.82rem">
-                  💡 Enter the M-Pesa confirmation code you received after payment.
-                </div>
-              </form>
+                  @if (stkPhase() === 'pushed') {
+                    <div class="text-center py-3">
+                      <div class="spinner-border text-primary mb-3"></div>
+                      <p class="fw-semibold mb-1">Check your phone</p>
+                      <p class="text-muted-sm">{{ stkMessage() }}</p>
+                    </div>
+                  }
+
+                  @if (stkPhase() === 'completed') {
+                    <div class="alert alert-success py-2">✅ Payment confirmed! Balance updated.</div>
+                  }
+
+                  @if (stkPhase() === 'failed') {
+                    <div class="alert alert-danger py-2">{{ stkMessage() }}</div>
+                  }
+                </form>
+              } @else if (payMethod() === 'PAYBILL') {
+                <form [formGroup]="paybillForm">
+                  <div class="mpesa-logo-bar mb-3">
+                    <div class="mpesa-badge">M-PESA</div>
+                    <span style="font-size:.8rem;color:#7f8c8d">Lipa na M-Pesa — Pay Bill</span>
+                  </div>
+
+                  <div class="bg-light rounded p-3 mb-3">
+                    <div class="row g-2 text-sm">
+                      <div class="col-6">
+                        <div class="text-muted-sm">Business No. (Paybill)</div>
+                        <div class="fw-semibold font-mono">{{ paybillNumber() ?? '—' }}</div>
+                      </div>
+                      <div class="col-6">
+                        <div class="text-muted-sm">Account Number</div>
+                        <div class="fw-semibold font-mono">CONTRIB-{{ c.id }}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label class="form-label">Amount (KSh)</label>
+                    <input type="number" class="form-control" formControlName="amount"
+                      [max]="c.balance" placeholder="Enter amount">
+                    <div class="form-text">Max: {{ c.balance | ksh }}</div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label class="form-label">M-Pesa Confirmation Code</label>
+                    <input type="text" class="form-control" formControlName="reference"
+                      placeholder="e.g. QGH3X1ABCD">
+                  </div>
+
+                  <div class="alert alert-info py-2" style="font-size:.82rem">
+                    💡 Go to M-Pesa → Lipa na M-Pesa → Pay Bill on your phone, enter the business
+                    and account numbers above, then come back and enter the confirmation code you receive.
+                  </div>
+                </form>
+              } @else {
+                <form [formGroup]="bankForm">
+                  <div class="mb-3">
+                    <label class="form-label">Amount (KSh)</label>
+                    <input type="number" class="form-control" formControlName="amount"
+                      [max]="c.balance" placeholder="Enter amount">
+                    <div class="form-text">Max: {{ c.balance | ksh }}</div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label class="form-label">Bank Reference / Confirmation Code</label>
+                    <input type="text" class="form-control" formControlName="reference"
+                      placeholder="e.g. bank transaction ref">
+                  </div>
+
+                  <div class="alert alert-success py-2" style="font-size:.82rem">
+                    💡 Enter the confirmation/reference code from your bank transfer receipt.
+                  </div>
+                </form>
+              }
             </div>
             <div class="modal-footer">
-              <button class="btn btn-outline-secondary" (click)="payingContrib.set(null)">Cancel</button>
-              <button class="btn btn-primary" (click)="submitPayment()" [disabled]="payLoading()">
-                @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
-                Submit Payment
-              </button>
+              <button class="btn btn-outline-secondary" [disabled]="stkPhase() === 'pushed'"
+                (click)="closeModal()">{{ stkPhase() === 'completed' ? 'Close' : 'Cancel' }}</button>
+              @if (payMethod() === 'MPESA' && stkPhase() === 'idle') {
+                <button class="btn btn-primary" (click)="submitStkPush()" [disabled]="payLoading()">
+                  @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                  Send STK Push
+                </button>
+              }
+              @if (payMethod() === 'PAYBILL') {
+                <button class="btn btn-primary" (click)="submitPaybillPayment()" [disabled]="payLoading()">
+                  @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                  Submit Payment
+                </button>
+              }
+              @if (payMethod() === 'BANK') {
+                <button class="btn btn-primary" (click)="submitBankPayment()" [disabled]="payLoading()">
+                  @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                  Submit Payment
+                </button>
+              }
             </div>
           </div>
         </div>
@@ -215,14 +324,22 @@ import autoTable from 'jspdf-autotable';
     }
   `
 })
-export class ContributionsComponent implements OnInit {
+export class ContributionsComponent implements OnInit, OnDestroy {
   contributions = signal<Contribution[]>([]);
   loading = signal(true);
   payingContrib = signal<Contribution | null>(null);
   payLoading = signal(false);
 
+  payMethod = signal<PayMethod>('MPESA');
+  stkPhase = signal<StkPhase>('idle');
+  stkMessage = signal('');
+  paybillNumber = signal<string | null>(null);
+  private pollHandle: ReturnType<typeof setInterval> | null = null;
+
   filterForm: FormGroup;
-  payForm: FormGroup;
+  stkForm: FormGroup;
+  paybillForm: FormGroup;
+  bankForm: FormGroup;
 
   totalPaid    = computed(() => this.filtered().reduce((s, c) => s + c.paidAmount, 0));
   totalBalance = computed(() => this.filtered().reduce((s, c) => s + c.balance, 0));
@@ -246,11 +363,21 @@ export class ContributionsComponent implements OnInit {
     private toast: ToastService
   ) {
     this.filterForm = this.fb.group({ search: '', period: '', status: '' });
-    this.payForm = this.fb.group({ amount: [0], reference: '' });
+    this.stkForm = this.fb.group({ amount: [0], phoneNumber: [''] });
+    this.paybillForm = this.fb.group({ amount: [0], reference: '' });
+    this.bankForm = this.fb.group({ amount: [0], reference: '' });
   }
 
   ngOnInit() {
     this.load();
+    this.contribSvc.getPaybillInfo().subscribe({
+      next: res => this.paybillNumber.set(res.paybillNumber),
+      error: () => {}
+    });
+  }
+
+  ngOnDestroy() {
+    this.stopPolling();
   }
 
   load() {
@@ -266,17 +393,110 @@ export class ContributionsComponent implements OnInit {
 
   openPay(c: Contribution) {
     this.payingContrib.set(c);
-    this.payForm.patchValue({ method: 'MPESA', amount: c.balance, reference: '' });
+    this.payMethod.set('MPESA');
+    this.stkPhase.set('idle');
+    this.stkMessage.set('');
+    const myPhone = this.auth.currentUser()?.phoneNumber ?? '';
+    this.stkForm.reset({ amount: c.balance, phoneNumber: myPhone });
+    this.paybillForm.reset({ amount: c.balance, reference: '' });
+    this.bankForm.reset({ amount: c.balance, reference: '' });
   }
 
-  submitPayment() {
+  closeModal() {
+    this.stopPolling();
+    this.payingContrib.set(null);
+  }
+
+  submitStkPush() {
     const c = this.payingContrib();
     if (!c) return;
-    const { amount, reference } = this.payForm.value;
+    const { amount, phoneNumber } = this.stkForm.value;
     if (!amount || amount <= 0) { this.toast.error('Enter a valid amount'); return; }
     if (amount > c.balance) { this.toast.error('Amount exceeds balance'); return; }
+    if (!phoneNumber) { this.toast.error('Enter the M-Pesa phone number'); return; }
+
     this.payLoading.set(true);
-    this.contribSvc.pay(c.id, amount, 'MPESA', reference).subscribe({
+    this.contribSvc.initiateStkPush(c.id, phoneNumber).subscribe({
+      next: res => {
+        this.payLoading.set(false);
+        this.stkPhase.set('pushed');
+        this.stkMessage.set(res.customerMessage || 'Enter your M-Pesa PIN to complete the payment.');
+        this.pollStkStatus(res.checkoutRequestId);
+      },
+      error: err => {
+        this.payLoading.set(false);
+        this.toast.error(err.error?.message ?? 'Failed to send STK push');
+      }
+    });
+  }
+
+  private pollStkStatus(checkoutRequestId: string, attempt = 0) {
+    const MAX_ATTEMPTS = 20; // ~60s at 3s intervals
+    this.stopPolling();
+    this.pollHandle = setInterval(() => {
+      this.contribSvc.getPaymentStatus(checkoutRequestId).subscribe({
+        next: res => {
+          if (res.status === 'COMPLETED') {
+            this.stopPolling();
+            this.stkPhase.set('completed');
+            this.load();
+          } else if (res.status === 'FAILED' || res.status === 'CANCELLED' || res.status === 'TIMEOUT') {
+            this.stopPolling();
+            this.stkPhase.set('failed');
+            this.stkMessage.set(
+              res.status === 'CANCELLED' ? 'Payment was cancelled on your phone.' :
+              res.status === 'TIMEOUT' ? 'No confirmation received in time. Check your M-Pesa messages — if you paid, it will still reconcile shortly.' :
+              'Payment failed. Please try again.'
+            );
+          } else if (++attempt >= MAX_ATTEMPTS) {
+            this.stopPolling();
+            this.stkPhase.set('failed');
+            this.stkMessage.set('Still waiting on confirmation — check your M-Pesa messages, your balance will update once it lands.');
+          }
+        },
+        error: () => { /* transient — keep polling until MAX_ATTEMPTS */ }
+      });
+    }, 3000);
+  }
+
+  private stopPolling() {
+    if (this.pollHandle) {
+      clearInterval(this.pollHandle);
+      this.pollHandle = null;
+    }
+  }
+
+  submitPaybillPayment() {
+    const c = this.payingContrib();
+    if (!c) return;
+    const { amount, reference } = this.paybillForm.value;
+    if (!amount || amount <= 0) { this.toast.error('Enter a valid amount'); return; }
+    if (amount > c.balance) { this.toast.error('Amount exceeds balance'); return; }
+    if (!reference) { this.toast.error('Enter the M-Pesa confirmation code'); return; }
+    this.payLoading.set(true);
+    this.contribSvc.pay(c.id, amount, 'PAYBILL', reference).subscribe({
+      next: () => {
+        this.payLoading.set(false);
+        this.payingContrib.set(null);
+        this.toast.success('Payment recorded successfully!');
+        this.load();
+      },
+      error: err => {
+        this.payLoading.set(false);
+        this.toast.error(err.error?.message ?? 'Payment failed');
+      }
+    });
+  }
+
+  submitBankPayment() {
+    const c = this.payingContrib();
+    if (!c) return;
+    const { amount, reference } = this.bankForm.value;
+    if (!amount || amount <= 0) { this.toast.error('Enter a valid amount'); return; }
+    if (amount > c.balance) { this.toast.error('Amount exceeds balance'); return; }
+    if (!reference) { this.toast.error('Enter the bank reference/confirmation code'); return; }
+    this.payLoading.set(true);
+    this.contribSvc.pay(c.id, amount, 'BANK', reference).subscribe({
       next: () => {
         this.payLoading.set(false);
         this.payingContrib.set(null);

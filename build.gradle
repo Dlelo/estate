@@ -30,6 +30,9 @@ dependencies {
 	implementation "software.amazon.awssdk:s3"
 	implementation "software.amazon.awssdk:url-connection-client"
 
+	implementation 'com.sendgrid:sendgrid-java:4.10.2'
+	implementation 'com.twilio.sdk:twilio:10.6.1'
+
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 
@@ -37,6 +40,17 @@ dependencies {
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	// Pin transitive deps pulled in at outdated, CVE-affected versions by sendgrid-java/twilio
+	// (neither SDK's own release cycle has caught up to these fixes yet).
+	constraints {
+		implementation('org.bouncycastle:bcprov-jdk18on:1.85') {
+			because 'sendgrid-java 4.10.2 pulls 1.76, affected by CVE-2024-29857/30172/34447/30171 and others'
+		}
+		implementation('commons-io:commons-io:2.22.0') {
+			because 'twilio 10.6.1 pulls 2.7, affected by CVE-2024-47554 (resource exhaustion)'
+		}
+	}
 }
 
 tasks.named('test') {

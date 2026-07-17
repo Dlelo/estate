@@ -1,16 +1,16 @@
 import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { interval, of } from 'rxjs';
+import { catchError, first, switchMap, timeout } from 'rxjs/operators';
 import { ContributionService } from '../../core/services/contribution.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { KshCurrencyPipe } from '../../shared/pipes/ksh-currency.pipe';
-import { Contribution } from '../../core/models';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { Contribution, PaymentStatus } from '../../core/models';
 
-type PayStep = 'mpesa' | 'confirm';
-type PayMode = 'single' | 'bulk';
+type PayStep = 'mpesa' | 'confirm' | 'waiting';
+type PayMethod = 'MPESA' | 'PAYBILL' | 'BANK';
 
 @Component({
   selector: 'app-pending',
@@ -170,7 +170,47 @@ type PayMode = 'single' | 'bulk';
 
             <div class="modal-body px-4 py-3">
 
-              @if (bulkPayStep() === 'mpesa') {
+              <!-- Method toggle -->
+              <div class="btn-group w-100 mb-3" role="group">
+                <button type="button" class="btn"
+                  [class.btn-primary]="bulkPayMethod() === 'MPESA'" [class.btn-outline-primary]="bulkPayMethod() !== 'MPESA'"
+                  [disabled]="bulkPayStep() === 'waiting'"
+                  (click)="bulkPayMethod.set('MPESA')">📱 STK Push</button>
+                <button type="button" class="btn"
+                  [class.btn-primary]="bulkPayMethod() === 'PAYBILL'" [class.btn-outline-primary]="bulkPayMethod() !== 'PAYBILL'"
+                  [disabled]="bulkPayStep() === 'waiting'"
+                  (click)="bulkPayMethod.set('PAYBILL')">🧾 Paybill</button>
+                <button type="button" class="btn"
+                  [class.btn-primary]="bulkPayMethod() === 'BANK'" [class.btn-outline-primary]="bulkPayMethod() !== 'BANK'"
+                  [disabled]="bulkPayStep() === 'waiting'"
+                  (click)="bulkPayMethod.set('BANK')">🏦 Bank</button>
+              </div>
+
+              @if (bulkPayMethod() === 'PAYBILL' || bulkPayMethod() === 'BANK') {
+                <form [formGroup]="bulkManualForm">
+                  @if (bulkPayMethod() === 'PAYBILL') {
+                    <div class="mpesa-logo-bar mb-3">
+                      <div class="mpesa-badge">M-PESA</div>
+                      <span class="text-muted-sm">Lipa na M-Pesa — Pay Bill</span>
+                    </div>
+                    <div class="bg-light rounded p-3 mb-3">
+                      <div class="text-muted-sm">Business No. (Paybill)</div>
+                      <div class="fw-semibold font-mono">{{ paybillNumber() ?? '—' }}</div>
+                    </div>
+                  }
+                  <div class="alert py-2" [class.alert-info]="bulkPayMethod()==='PAYBILL'" [class.alert-success]="bulkPayMethod()==='BANK'" style="font-size:.82rem">
+                    💡 One reference/confirmation code will be recorded against all {{ bulkItems().length }} selected month(s),
+                    covering a total of {{ bulkTotal(bulkItems(), bulkItems().length) | ksh }}.
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">{{ bulkPayMethod() === 'PAYBILL' ? 'M-Pesa Confirmation Code' : 'Bank Reference / Confirmation Code' }}</label>
+                    <input type="text" class="form-control" formControlName="reference"
+                      [placeholder]="bulkPayMethod() === 'PAYBILL' ? 'e.g. QGH3X1ABCD' : 'e.g. bank transaction ref'">
+                  </div>
+                </form>
+              }
+
+              @if (bulkPayMethod() === 'MPESA' && bulkPayStep() === 'mpesa') {
                 <form [formGroup]="mpesaForm">
                   <div class="mpesa-logo-bar mb-3">
                     <div class="mpesa-badge">M-PESA</div>
@@ -194,7 +234,7 @@ type PayMode = 'single' | 'bulk';
                 </form>
               }
 
-              @if (bulkPayStep() === 'confirm') {
+              @if (bulkPayMethod() === 'MPESA' && bulkPayStep() === 'confirm') {
                 <div class="text-center py-2">
                   <div style="font-size:3rem">📱</div>
                   <h6 class="mt-2 fw-bold">Confirm Bulk M-Pesa Payment</h6>
@@ -209,18 +249,34 @@ type PayMode = 'single' | 'bulk';
                   </div>
                 </div>
               }
+
+              @if (bulkPayMethod() === 'MPESA' && bulkPayStep() === 'waiting') {
+                <div class="text-center py-3">
+                  <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem"></div>
+                  <h6 class="fw-bold">{{ waitingMessage() }}</h6>
+                  <p class="text-muted-sm">Enter your M-Pesa PIN on your phone to complete the payment.</p>
+                </div>
+              }
             </div>
 
             <div class="modal-footer">
-              @if (bulkPayStep() === 'mpesa') {
+              @if (bulkPayMethod() === 'PAYBILL' || bulkPayMethod() === 'BANK') {
+                <button class="btn btn-outline-secondary" (click)="closeBulkModal()">Cancel</button>
+                <button class="btn btn-primary" (click)="submitBulkManualPayment()" [disabled]="payLoading()">
+                  @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                  Submit Payment
+                </button>
+              } @else if (bulkPayStep() === 'mpesa') {
                 <button class="btn btn-outline-secondary" (click)="closeBulkModal()">Cancel</button>
                 <button class="btn btn-primary" (click)="nextBulkStep()">Continue ›</button>
-              } @else {
+              } @else if (bulkPayStep() === 'confirm') {
                 <button class="btn btn-outline-secondary" (click)="bulkPayStep.set('mpesa')">‹ Back</button>
                 <button class="btn btn-primary" (click)="submitBulkPayment()" [disabled]="payLoading()">
                   @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
                   Confirm & Pay {{ bulkTotal(bulkItems(), bulkItems().length) | ksh }}
                 </button>
+              } @else {
+                <button class="btn btn-outline-secondary" (click)="closeBulkModal()">Close</button>
               }
             </div>
           </div>
@@ -263,8 +319,66 @@ type PayMode = 'single' | 'bulk';
 
             <div class="modal-body px-4 py-3">
 
+              <!-- Method toggle -->
+              <div class="btn-group w-100 mb-3" role="group">
+                <button type="button" class="btn"
+                  [class.btn-primary]="payMethod() === 'MPESA'" [class.btn-outline-primary]="payMethod() !== 'MPESA'"
+                  [disabled]="payStep() === 'waiting'"
+                  (click)="payMethod.set('MPESA')">📱 STK Push</button>
+                <button type="button" class="btn"
+                  [class.btn-primary]="payMethod() === 'PAYBILL'" [class.btn-outline-primary]="payMethod() !== 'PAYBILL'"
+                  [disabled]="payStep() === 'waiting'"
+                  (click)="payMethod.set('PAYBILL')">🧾 Paybill</button>
+                <button type="button" class="btn"
+                  [class.btn-primary]="payMethod() === 'BANK'" [class.btn-outline-primary]="payMethod() !== 'BANK'"
+                  [disabled]="payStep() === 'waiting'"
+                  (click)="payMethod.set('BANK')">🏦 Bank</button>
+              </div>
+
+              @if (payMethod() === 'PAYBILL' || payMethod() === 'BANK') {
+                <form [formGroup]="manualForm">
+                  @if (payMethod() === 'PAYBILL') {
+                    <div class="mpesa-logo-bar mb-3">
+                      <div class="mpesa-badge">M-PESA</div>
+                      <span class="text-muted-sm">Lipa na M-Pesa — Pay Bill</span>
+                    </div>
+                    <div class="bg-light rounded p-3 mb-3">
+                      <div class="row g-2 text-sm">
+                        <div class="col-6">
+                          <div class="text-muted-sm">Business No. (Paybill)</div>
+                          <div class="fw-semibold font-mono">{{ paybillNumber() ?? '—' }}</div>
+                        </div>
+                        <div class="col-6">
+                          <div class="text-muted-sm">Account Number</div>
+                          <div class="fw-semibold font-mono">CONTRIB-{{ payingContrib()!.id }}</div>
+                        </div>
+                      </div>
+                    </div>
+                  }
+                  <div class="mb-3">
+                    <label class="form-label">Amount (KSh)</label>
+                    <input type="number" class="form-control" formControlName="amount"
+                      [max]="payingContrib()!.balance" placeholder="Enter amount">
+                    <div class="form-text">Max: {{ payingContrib()!.balance | ksh }}</div>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">{{ payMethod() === 'PAYBILL' ? 'M-Pesa Confirmation Code' : 'Bank Reference / Confirmation Code' }}</label>
+                    <input type="text" class="form-control" formControlName="reference"
+                      [placeholder]="payMethod() === 'PAYBILL' ? 'e.g. QGH3X1ABCD' : 'e.g. bank transaction ref'">
+                  </div>
+                  <div class="alert py-2" [class.alert-info]="payMethod()==='PAYBILL'" [class.alert-success]="payMethod()==='BANK'" style="font-size:.82rem">
+                    @if (payMethod() === 'PAYBILL') {
+                      💡 Go to M-Pesa → Lipa na M-Pesa → Pay Bill on your phone, enter the business
+                      and account numbers above, then come back and enter the confirmation code you receive.
+                    } @else {
+                      💡 Enter the confirmation/reference code from your bank transfer receipt.
+                    }
+                  </div>
+                </form>
+              }
+
               <!-- STEP 1: M-Pesa details -->
-              @if (payStep() === 'mpesa') {
+              @if (payMethod() === 'MPESA' && payStep() === 'mpesa') {
                 <form [formGroup]="mpesaForm">
                   <div class="mpesa-logo-bar mb-3">
                     <div class="mpesa-badge">M-PESA</div>
@@ -299,7 +413,7 @@ type PayMode = 'single' | 'bulk';
               }
 
               <!-- STEP 2: Confirm -->
-              @if (payStep() === 'confirm') {
+              @if (payMethod() === 'MPESA' && payStep() === 'confirm') {
                 <div class="text-center py-2">
                   <div style="font-size:3rem">📱</div>
                   <h6 class="mt-2 fw-bold">Confirm M-Pesa Payment</h6>
@@ -315,18 +429,35 @@ type PayMode = 'single' | 'bulk';
                 </div>
               }
 
+              <!-- STEP 3: Waiting for STK confirmation -->
+              @if (payMethod() === 'MPESA' && payStep() === 'waiting') {
+                <div class="text-center py-3">
+                  <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem"></div>
+                  <h6 class="fw-bold">{{ waitingMessage() }}</h6>
+                  <p class="text-muted-sm">Enter your M-Pesa PIN on your phone to complete the payment.</p>
+                </div>
+              }
+
             </div><!-- /modal-body -->
 
             <div class="modal-footer">
-              @if (payStep() === 'mpesa') {
+              @if (payMethod() === 'PAYBILL' || payMethod() === 'BANK') {
+                <button class="btn btn-outline-secondary" (click)="closeModal()">Cancel</button>
+                <button class="btn btn-primary" (click)="submitManualPayment()" [disabled]="payLoading()">
+                  @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                  Submit Payment
+                </button>
+              } @else if (payStep() === 'mpesa') {
                 <button class="btn btn-outline-secondary" (click)="closeModal()">Cancel</button>
                 <button class="btn btn-primary" (click)="nextStep()">Continue ›</button>
-              } @else {
+              } @else if (payStep() === 'confirm') {
                 <button class="btn btn-outline-secondary" (click)="payStep.set('mpesa')">‹ Back</button>
                 <button class="btn btn-primary" (click)="submitPayment()" [disabled]="payLoading()">
                   @if (payLoading()) { <span class="spinner-border spinner-border-sm me-2"></span> }
                   Confirm & Pay {{ mpesaForm.value.amount | ksh }}
                 </button>
+              } @else {
+                <button class="btn btn-outline-secondary" (click)="closeModal()">Close</button>
               }
             </div>
 
@@ -385,13 +516,19 @@ export class PendingComponent implements OnInit {
   loading = signal(true);
   payingContrib = signal<Contribution | null>(null);
   payStep = signal<PayStep>('mpesa');
+  payMethod = signal<PayMethod>('MPESA');
   payLoading = signal(false);
+  waitingMessage = signal('Check your phone to complete payment…');
+  paybillNumber = signal<string | null>(null);
 
   // Bulk pay
   bulkItems = signal<Contribution[]>([]);
   bulkPayStep = signal<PayStep>('mpesa');
+  bulkPayMethod = signal<PayMethod>('MPESA');
 
   mpesaForm: FormGroup;
+  manualForm: FormGroup;
+  bulkManualForm: FormGroup;
 
   totalOwed = computed(() => this.pending().reduce((s, c) => s + c.balance, 0));
 
@@ -424,12 +561,25 @@ export class PendingComponent implements OnInit {
       phone: ['', [Validators.required, Validators.pattern(/^7\d{8}$/)]],
       amount: [0, [Validators.required, Validators.min(1)]]
     });
+    this.manualForm = this.fb.group({ amount: [0], reference: '' });
+    this.bulkManualForm = this.fb.group({ reference: '' });
   }
 
-  ngOnInit() { this.load(); }
+  ngOnInit() {
+    this.load();
+    this.contribSvc.getPaybillInfo().subscribe({
+      next: res => this.paybillNumber.set(res.paybillNumber),
+      error: () => {}
+    });
+  }
 
   load() {
-    const uid = this.auth.getUserIdFromToken() ?? 1;
+    const uid = this.auth.getUserIdFromToken();
+    if (uid == null) {
+      this.toast.error('Session invalid — please log in again.');
+      this.auth.logout();
+      return;
+    }
     this.loading.set(true);
     this.contribSvc.getPending(uid).subscribe({
       next: d => { this.pending.set(d); this.loading.set(false); },
@@ -440,7 +590,9 @@ export class PendingComponent implements OnInit {
   openPay(c: Contribution) {
     this.payingContrib.set(c);
     this.payStep.set('mpesa');
+    this.payMethod.set('MPESA');
     this.mpesaForm.patchValue({ amount: c.balance, phone: '' });
+    this.manualForm.reset({ amount: c.balance, reference: '' });
   }
 
   payAll() {
@@ -453,6 +605,29 @@ export class PendingComponent implements OnInit {
     this.payStep.set('mpesa');
   }
 
+  submitManualPayment() {
+    const c = this.payingContrib();
+    if (!c) return;
+    const { amount, reference } = this.manualForm.value;
+    const method = this.payMethod();
+    if (!amount || amount <= 0) { this.toast.error('Enter a valid amount'); return; }
+    if (amount > c.balance) { this.toast.error('Amount exceeds balance'); return; }
+    if (!reference) { this.toast.error(method === 'PAYBILL' ? 'Enter the M-Pesa confirmation code' : 'Enter the bank reference/confirmation code'); return; }
+    this.payLoading.set(true);
+    this.contribSvc.pay(c.id, amount, method, reference).subscribe({
+      next: () => {
+        this.payLoading.set(false);
+        this.closeModal();
+        this.toast.success('Payment recorded successfully!');
+        this.load();
+      },
+      error: err => {
+        this.payLoading.set(false);
+        this.toast.error(err.error?.message ?? 'Payment failed');
+      }
+    });
+  }
+
   nextStep() {
     this.mpesaForm.markAllAsTouched();
     if (this.mpesaForm.invalid) return;
@@ -462,22 +637,42 @@ export class PendingComponent implements OnInit {
   submitPayment() {
     const c = this.payingContrib();
     if (!c) return;
-    const amount = this.mpesaForm.value.amount;
-    const ref = `+254${this.mpesaForm.value.phone}`;
+    const phone = this.mpesaForm.value.phone;
 
     this.payLoading.set(true);
-    this.contribSvc.pay(c.id, amount, 'MPESA', ref).subscribe({
-      next: () => {
+    this.contribSvc.initiateStkPush(c.id, phone).subscribe({
+      next: res => {
         this.payLoading.set(false);
-        this.closeModal();
-        this.toast.success(`M-Pesa payment of ${new KshCurrencyPipe().transform(amount)} recorded!`);
-        this.load();
+        this.payStep.set('waiting');
+        this.waitingMessage.set(res.customerMessage || 'Check your phone to complete payment…');
+        this.pollPaymentStatus(res.checkoutRequestId, status => {
+          if (status === 'COMPLETED') {
+            this.closeModal();
+            this.toast.success('Payment received. Thank you!');
+            this.load();
+          } else if (status === 'FAILED' || status === 'CANCELLED') {
+            this.toast.error(status === 'CANCELLED' ? 'Payment was cancelled.' : 'Payment failed. Please try again.');
+            this.payStep.set('mpesa');
+          } else {
+            this.toast.info('Payment is still pending. We’ll notify you once it completes.');
+            this.closeModal();
+          }
+        });
       },
       error: err => {
         this.payLoading.set(false);
-        this.toast.error(err.error?.message ?? 'Payment failed. Please try again.');
+        this.toast.error(err.error?.message ?? 'Could not start M-Pesa payment. Please try again.');
       }
     });
+  }
+
+  private pollPaymentStatus(checkoutRequestId: string, onDone: (status: PaymentStatus) => void) {
+    interval(3000).pipe(
+      switchMap(() => this.contribSvc.getPaymentStatus(checkoutRequestId)),
+      first(r => r.status !== 'PENDING', { status: 'PENDING' as PaymentStatus }),
+      timeout(90000),
+      catchError(() => of({ status: 'PENDING' as PaymentStatus }))
+    ).subscribe(r => onDone(r.status));
   }
 
   // ── Bulk pay ─────────────────────────────────────────────
@@ -488,12 +683,35 @@ export class PendingComponent implements OnInit {
   openBulkPay(items: Contribution[]) {
     this.bulkItems.set(items);
     this.bulkPayStep.set('mpesa');
+    this.bulkPayMethod.set('MPESA');
     this.mpesaForm.patchValue({ phone: '' });
+    this.bulkManualForm.reset({ reference: '' });
   }
 
   closeBulkModal() {
     this.bulkItems.set([]);
     this.bulkPayStep.set('mpesa');
+  }
+
+  submitBulkManualPayment() {
+    const items = this.bulkItems();
+    if (!items.length) return;
+    const { reference } = this.bulkManualForm.value;
+    const method = this.bulkPayMethod();
+    if (!reference) { this.toast.error(method === 'PAYBILL' ? 'Enter the M-Pesa confirmation code' : 'Enter the bank reference/confirmation code'); return; }
+    this.payLoading.set(true);
+    this.contribSvc.bulkPay(items.map(c => c.id), method, reference).subscribe({
+      next: () => {
+        this.payLoading.set(false);
+        this.closeBulkModal();
+        this.toast.success(`Payment for ${items.length} month(s) recorded successfully!`);
+        this.load();
+      },
+      error: err => {
+        this.payLoading.set(false);
+        this.toast.error(err.error?.message ?? 'Payment failed');
+      }
+    });
   }
 
   nextBulkStep() {
@@ -506,20 +724,31 @@ export class PendingComponent implements OnInit {
     const items = this.bulkItems();
     if (!items.length) return;
     const ids = items.map(c => c.id);
-    const ref = `+254${this.mpesaForm.value.phone}`;
+    const phone = this.mpesaForm.value.phone;
 
     this.payLoading.set(true);
-    this.contribSvc.bulkPay(ids, 'MPESA', ref).subscribe({
-      next: () => {
+    this.contribSvc.initiateBulkStkPush(ids, phone).subscribe({
+      next: res => {
         this.payLoading.set(false);
-        this.closeBulkModal();
-        const total = new KshCurrencyPipe().transform(items.reduce((s, c) => s + c.balance, 0));
-        this.toast.success(`Bulk payment of ${total} for ${items.length} month(s) recorded!`);
-        this.load();
+        this.bulkPayStep.set('waiting');
+        this.waitingMessage.set(res.customerMessage || 'Check your phone to complete payment…');
+        this.pollPaymentStatus(res.checkoutRequestId, status => {
+          if (status === 'COMPLETED') {
+            this.closeBulkModal();
+            this.toast.success(`Bulk payment for ${items.length} month(s) received. Thank you!`);
+            this.load();
+          } else if (status === 'FAILED' || status === 'CANCELLED') {
+            this.toast.error(status === 'CANCELLED' ? 'Payment was cancelled.' : 'Payment failed. Please try again.');
+            this.bulkPayStep.set('mpesa');
+          } else {
+            this.toast.info('Payment is still pending. We’ll notify you once it completes.');
+            this.closeBulkModal();
+          }
+        });
       },
       error: err => {
         this.payLoading.set(false);
-        this.toast.error(err.error?.message ?? 'Bulk payment failed. Please try again.');
+        this.toast.error(err.error?.message ?? 'Could not start M-Pesa payment. Please try again.');
       }
     });
   }

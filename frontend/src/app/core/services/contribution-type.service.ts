@@ -8,6 +8,7 @@ export interface ContributionTypeRequest {
   amount: number;
   frequency: 'MONTHLY' | 'ANNUAL' | 'ONE_TIME';
   description?: string;
+  dueDay?: number;
 }
 
 @Injectable({ providedIn: 'root' })

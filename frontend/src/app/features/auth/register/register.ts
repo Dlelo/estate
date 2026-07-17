@@ -56,6 +56,15 @@ import { ToastService } from '../../../core/services/toast.service';
           </div>
 
           <div class="mb-3">
+            <label class="form-label">Email <span class="text-muted">(optional, for payment receipts &amp; notifications)</span></label>
+            <input type="email" class="form-control" formControlName="email"
+              placeholder="you@example.com" [class.is-invalid]="touched('email')">
+            @if (touched('email')) {
+              <div class="invalid-feedback">Enter a valid email address</div>
+            }
+          </div>
+
+          <div class="mb-3">
             <label class="form-label">Password</label>
             <div class="input-group">
               <span class="input-group-text">🔒</span>
@@ -115,6 +124,7 @@ export class RegisterComponent {
       lastName: ['', Validators.required],
       phoneNumber: ['', [Validators.required, Validators.minLength(10)]],
       houseNumber: [''],
+      email: ['', Validators.email],
       password: ['', [Validators.required, Validators.minLength(6)]],
       confirmPassword: ['', Validators.required]
     }, { validators: this.passwordMatch });

@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
-import java.time.YearMonth;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "contributions")
@@ -31,6 +31,9 @@ public class Contribution extends BaseEntity {
     private BigDecimal balance;
 
     private String period; // e.g. "2026-01" (YearMonth)
+
+    /** Computed at generation time from ContributionType.dueDay; null if not tracked. */
+    private LocalDate dueDate;
 
     @Builder.Default
     private Boolean settled = false;

@@ -22,16 +22,40 @@ public class NotificationController {
     @PostMapping("/send")
     @PreAuthorize("hasRole('ADMIN')")
     public Map<String, Object> send(@Valid @RequestBody SendNotificationRequest request) {
-        int count = notificationService.send(request);
-        return Map.of("sent", count, "message", "Notification sent to " + count + " user(s)");
+        NotificationService.SendResult result = notificationService.send(request);
+        return Map.of(
+                "sent", result.count(),
+                "batchId", result.batchId(),
+                "message", "Notification queued for " + result.count() + " user(s)");
     }
 
     /** Admin: send payment reminders to all members with unpaid contributions for the period */
     @PostMapping("/remind-unpaid")
     @PreAuthorize("hasRole('ADMIN')")
     public Map<String, Object> remindUnpaid(@RequestParam String period) {
-        int count = notificationService.sendPaymentReminders(period);
-        return Map.of("reminded", count, "message", "Payment reminders sent to " + count + " member(s)");
+        NotificationService.SendResult result = notificationService.sendPaymentReminders(period);
+        return Map.of(
+                "reminded", result.count(),
+                "batchId", result.batchId(),
+                "message", "Payment reminders queued for " + result.count() + " member(s)");
+    }
+
+    /** Admin: delivery outcome summary for a batchId returned by /send or /remind-unpaid.
+     *  Email/SMS results land asynchronously, so poll this shortly after sending. */
+    @GetMapping("/batch/{batchId}/summary")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Map<String, Object> batchSummary(@PathVariable String batchId) {
+        var summary = notificationService.getBatchDeliverySummary(batchId);
+        long emailDelivered = summary.getEmailDelivered() != null ? summary.getEmailDelivered() : 0;
+        long emailFailed = summary.getEmailFailed() != null ? summary.getEmailFailed() : 0;
+        long smsDelivered = summary.getSmsDelivered() != null ? summary.getSmsDelivered() : 0;
+        long smsFailed = summary.getSmsFailed() != null ? summary.getSmsFailed() : 0;
+        long emailPending = summary.getTotal() - emailDelivered - emailFailed;
+        long smsPending = summary.getTotal() - smsDelivered - smsFailed;
+        return Map.of(
+                "total", summary.getTotal(),
+                "email", Map.of("delivered", emailDelivered, "failed", emailFailed, "pending", emailPending),
+                "sms", Map.of("delivered", smsDelivered, "failed", smsFailed, "pending", smsPending));
     }
 
     /** User: get all notifications */

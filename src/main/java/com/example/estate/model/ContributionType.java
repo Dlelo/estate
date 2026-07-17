@@ -20,9 +20,13 @@ public class ContributionType extends BaseEntity {
     @Column(nullable = false)
     private BigDecimal amount;
 
+    // VARCHAR, not a native MySQL ENUM — see Payment.method for why.
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "VARCHAR(30)")
     private ContributionFrequency frequency;
+
+    /** Day of month (1-31) contributions of this type are due. Null = due date not tracked. */
+    private Integer dueDay;
 
     @Builder.Default
     private Boolean active = true;

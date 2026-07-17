@@ -1,16 +1,17 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { ContributionTypeService, ContributionTypeRequest } from '../../../core/services/contribution-type.service';
 import { ContributionService } from '../../../core/services/contribution.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { KshCurrencyPipe } from '../../../shared/pipes/ksh-currency.pipe';
-import { ContributionType } from '../../../core/models';
+import { Contribution, ContributionType } from '../../../core/models';
 
 @Component({
   selector: 'app-admin-contribution-types',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, KshCurrencyPipe],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink, KshCurrencyPipe],
   template: `
     <div class="row g-4">
 
@@ -61,9 +62,8 @@ import { ContributionType } from '../../../core/models';
                           <span class="badge"
                             [class.bg-primary]="t.frequency==='MONTHLY'"
                             [class.bg-warning]="t.frequency==='ANNUAL'"
-                            [class.text-dark]="t.frequency==='ANNUAL'"
                             [class.bg-info]="t.frequency==='ONE_TIME'"
-                            [class.text-dark]="t.frequency==='ONE_TIME'">
+                            [class.text-dark]="t.frequency==='ANNUAL' || t.frequency==='ONE_TIME'">
                             {{ freqLabel(t.frequency) }}
                           </span>
                         </td>
@@ -113,6 +113,36 @@ import { ContributionType } from '../../../core/models';
                 Generate
               </button>
             </div>
+
+            @if (generatedResults() !== null) {
+              <div class="mt-3">
+                @if (!generatedResults()!.length) {
+                  <div class="text-muted-sm">No new contributions were generated for {{ generatedPeriod }} — everyone already has a record for this period.</div>
+                } @else {
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted-sm">{{ generatedResults()!.length }} contribution(s) generated for {{ generatedPeriod }}:</span>
+                    <a routerLink="/admin/reports" class="btn btn-sm btn-outline-primary">View in Reports →</a>
+                  </div>
+                  <div class="table-responsive" style="max-height:300px;overflow-y:auto">
+                    <table class="table table-modern table-sm mb-0">
+                      <thead>
+                        <tr><th>Resident</th><th>Category</th><th>Amount</th><th>Due Date</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (c of generatedResults(); track c.id) {
+                          <tr>
+                            <td>{{ c.user.fullName }}</td>
+                            <td>{{ c.contributionType.name }}</td>
+                            <td>{{ c.amount | ksh }}</td>
+                            <td>{{ c.dueDate ?? '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            }
           </div>
         </div>
       </div>
@@ -180,6 +210,13 @@ import { ContributionType } from '../../../core/models';
                 }
               </div>
 
+              <div class="mb-4">
+                <label class="form-label">Due Day of Month <span class="text-muted">(optional)</span></label>
+                <input type="number" class="form-control" formControlName="dueDay"
+                  placeholder="e.g. 5" min="1" max="31">
+                <div class="form-text">Used for automatic reminders. Leave blank if this type has no fixed due date.</div>
+              </div>
+
               <!-- Preview -->
               @if (typeForm.value.name && typeForm.value.amount) {
                 <div class="alert alert-info py-2 mb-3" style="font-size:.85rem">
@@ -228,6 +265,8 @@ export class AdminContributionTypesComponent implements OnInit {
   formError = signal('');
   generatePeriod = '';
   generateLoading = signal(false);
+  generatedResults = signal<Contribution[] | null>(null);
+  generatedPeriod = '';
 
   typeForm: FormGroup;
 
@@ -249,7 +288,8 @@ export class AdminContributionTypesComponent implements OnInit {
     this.typeForm = this.fb.group({
       name: ['', Validators.required],
       amount: [null, [Validators.required, Validators.min(1)]],
-      frequency: ['MONTHLY', Validators.required]
+      frequency: ['MONTHLY', Validators.required],
+      dueDay: [null, [Validators.min(1), Validators.max(31)]]
     });
   }
 
@@ -267,7 +307,7 @@ export class AdminContributionTypesComponent implements OnInit {
 
   openEdit(t: ContributionType) {
     this.editing.set(t);
-    this.typeForm.patchValue({ name: t.name, amount: t.amount, frequency: t.frequency });
+    this.typeForm.patchValue({ name: t.name, amount: t.amount, frequency: t.frequency, dueDay: t.dueDay ?? null });
     this.formError.set('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -327,10 +367,17 @@ export class AdminContributionTypesComponent implements OnInit {
   generate() {
     if (!this.generatePeriod) return;
     this.generateLoading.set(true);
+    this.generatedResults.set(null);
     this.contribSvc.generateForPeriod(this.generatePeriod).subscribe({
-      next: msg => {
+      next: res => {
         this.generateLoading.set(false);
-        this.toast.success(msg as string || `Contributions generated for ${this.generatePeriod}`);
+        this.toast.success(res.count > 0
+          ? `${res.count} contribution(s) generated for ${res.period}`
+          : `No new contributions to generate for ${res.period} (already up to date)`);
+        this.generatedPeriod = res.period;
+        // Show exactly what was created (or confirm nothing new was needed) instead of leaving
+        // the admin with only a toast and no visible change in the page.
+        this.generatedResults.set(res.contributions);
       },
       error: err => {
         this.generateLoading.set(false);

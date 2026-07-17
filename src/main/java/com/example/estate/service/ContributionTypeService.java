@@ -39,6 +39,7 @@ public class ContributionTypeService {
                 .name(req.getName())
                 .amount(req.getAmount())
                 .frequency(req.getFrequency())
+                .dueDay(req.getDueDay())
                 .active(true)
                 .build();
         type = repository.save(type);
@@ -68,6 +69,7 @@ public class ContributionTypeService {
         type.setName(req.getName());
         type.setAmount(req.getAmount());
         type.setFrequency(req.getFrequency());
+        type.setDueDay(req.getDueDay());
         return repository.save(type);
     }
 

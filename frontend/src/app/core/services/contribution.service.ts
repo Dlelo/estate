@@ -1,7 +1,13 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { Contribution, Payment } from '../models';
+import { Contribution, Payment, PaymentStatus } from '../models';
+
+export interface StkPushResponse {
+  checkoutRequestId: string;
+  merchantRequestId: string;
+  customerMessage: string;
+}
 
 @Injectable({ providedIn: 'root' })
 export class ContributionService {
@@ -29,10 +35,28 @@ export class ContributionService {
     return this.http.post<any[]>(`${this.base}/bulk-pay`, { ids, method, reference });
   }
 
+  initiateStkPush(contributionId: number, phoneNumber: string) {
+    return this.http.post<StkPushResponse>(`${this.base}/${contributionId}/stk-push`, { phoneNumber });
+  }
+
+  initiateBulkStkPush(contributionIds: number[], phoneNumber: string) {
+    return this.http.post<StkPushResponse>(`${this.base}/bulk-stk-push`, { contributionIds, phoneNumber });
+  }
+
+  getPaymentStatus(checkoutRequestId: string) {
+    return this.http.get<{ status: PaymentStatus }>(
+      `${environment.apiUrl}/api/payments/status/${checkoutRequestId}`
+    );
+  }
+
+  getPaybillInfo() {
+    return this.http.get<{ paybillNumber: string }>(`${environment.apiUrl}/api/payments/paybill-info`);
+  }
+
   generateForPeriod(period: string) {
-    return this.http.post<string>(
+    return this.http.post<{ period: string; count: number; contributions: Contribution[] }>(
       `${this.base}/admin/generate`, null,
-      { params: new HttpParams().set('period', period), responseType: 'text' as any }
+      { params: new HttpParams().set('period', period) }
     );
   }
 }

@@ -27,6 +27,12 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       SERVER_PORT: 8080
+      MPESA_BASE_URL: ${MPESA_BASE_URL:-https://api.safaricom.co.ke}
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY:-}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET:-}
+      MPESA_SHORTCODE: ${MPESA_SHORTCODE:-}
+      MPESA_PASSKEY: ${MPESA_PASSKEY:-}
+      MPESA_CALLBACK_URL: ${MPESA_CALLBACK_URL:-}
     depends_on:
       mysql_db:
         condition: service_healthy
